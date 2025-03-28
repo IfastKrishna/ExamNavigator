@@ -117,10 +117,11 @@ export class MemStorage implements IStorage {
       checkPeriod: 86400000 // prune expired entries every 24h
     });
     
-    // Create super admin user
+    // Create super admin user with a properly hashed password using our hashing function
+    // The password is set to "admin123" for easy access
     this.createUser({
       username: "admin",
-      password: "$2b$10$X.QRbdVQQrfQXSUzZ3xrqOY.9FBo8ycVj09/2om.QIY3SwIoHTMQm", // "password"
+      password: "70c9d83b95543315edd30b5157e75e5b2afe3c72c85e0d0a3341cd14ce2a60ce8d05225afa34b2d4f43c21bd64f03deade4d97b4daa8b168a367faa0af9d667e.41f93f2d87f62d60d5b70e91a7511f61", // "admin123"
       email: "admin@examportal.com",
       name: "Super Admin",
       role: UserRole.SUPER_ADMIN

@@ -76,14 +76,27 @@ export function setupAuth(app: Express) {
     try {
       const { username, password, email, name, role } = req.body;
       
+      // Basic validation
+      if (!username || !password || !email || !name) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      // Only superadmin can create academy accounts
-      if (role === UserRole.ACADEMY && (!req.user || req.user.role !== UserRole.SUPER_ADMIN)) {
-        return res.status(403).json({ message: "Only Super Admin can create academy accounts" });
+      // Determine role - default to STUDENT if not specified or not allowed
+      let userRole = UserRole.STUDENT;
+      
+      // Only allow academy role if created by super admin
+      if (role === UserRole.ACADEMY && req.user && req.user.role === UserRole.SUPER_ADMIN) {
+        userRole = UserRole.ACADEMY;
+      }
+      
+      // Super admin role is not allowed through registration
+      if (role === UserRole.SUPER_ADMIN) {
+        userRole = UserRole.STUDENT;
       }
 
       const hashedPassword = await hashPassword(password);
@@ -92,11 +105,11 @@ export function setupAuth(app: Express) {
         password: hashedPassword,
         email,
         name,
-        role: role || UserRole.STUDENT
+        role: userRole
       });
 
       // If creating an academy, also create an academy record
-      if (role === UserRole.ACADEMY) {
+      if (userRole === UserRole.ACADEMY) {
         await storage.createAcademy({
           userId: user.id,
           name: name,
