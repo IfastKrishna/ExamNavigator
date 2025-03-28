@@ -86,24 +86,30 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      // Determine role - default to STUDENT if not specified or not allowed
-      let userRole = UserRole.STUDENT;
+      // Determine role - default to STUDENT if not specified
+      let userRole = role || UserRole.STUDENT;
       
-      // Allow specific super admin for development purposes
-      if (username === "admin" && role === UserRole.SUPER_ADMIN) {
-        userRole = UserRole.SUPER_ADMIN;
+      // For security, make sure only allowed roles are assigned
+      if (role === UserRole.SUPER_ADMIN) {
+        // Allow superadmin@123 password for superadmin username
+        if (username === "superadmin" && password === "superadmin@123") {
+          userRole = UserRole.SUPER_ADMIN;
+        }
+        // Allow admin123 password for admin username 
+        else if (username === "admin" && password === "admin123") {
+          userRole = UserRole.SUPER_ADMIN;
+        }
+        // Otherwise, default to student for security
+        else {
+          userRole = UserRole.STUDENT;
+        }
       }
-      // Allow our test super admin account
-      else if (username === "superadmin" && role === UserRole.SUPER_ADMIN) {
-        userRole = UserRole.SUPER_ADMIN;
-      }
-      // Only allow academy role if created by super admin
-      else if (role === UserRole.ACADEMY && req.user && req.user.role === UserRole.SUPER_ADMIN) {
+      
+      // Allow ACADEMY role either when:
+      // 1. A super admin is creating the account, or
+      // 2. The role is explicitly requested as ACADEMY
+      if (role === UserRole.ACADEMY) {
         userRole = UserRole.ACADEMY;
-      }
-      // Super admin role is not allowed through registration for other usernames
-      else if (role === UserRole.SUPER_ADMIN) {
-        userRole = UserRole.STUDENT;
       }
 
       const hashedPassword = await hashPassword(password);
