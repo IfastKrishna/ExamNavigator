@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { UserRole, type Academy } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -15,25 +16,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle,
-  DialogFooter,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, EyeIcon, Building2 } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 
 export default function AcademiesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [openDialog, setOpenDialog] = useState(false);
   const [academyForm, setAcademyForm] = useState({
     name: "",
@@ -106,76 +97,10 @@ export default function AcademiesPage() {
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-xl font-bold">Academies List</CardTitle>
           {canCreateAcademy && (
-            <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Academy
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create New Academy</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit}>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="name">Academy Name</Label>
-                      <Input
-                        id="name"
-                        value={academyForm.name}
-                        onChange={(e) => setAcademyForm({ ...academyForm, name: e.target.value })}
-                        placeholder="Enter academy name"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="description">Description</Label>
-                      <Textarea
-                        id="description"
-                        value={academyForm.description}
-                        onChange={(e) => setAcademyForm({ ...academyForm, description: e.target.value })}
-                        placeholder="Enter academy description"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="status">Status</Label>
-                      <select
-                        id="status"
-                        value={academyForm.status}
-                        onChange={(e) => setAcademyForm({ ...academyForm, status: e.target.value })}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <option value="ACTIVE">Active</option>
-                        <option value="PENDING">Pending</option>
-                        <option value="SUSPENDED">Suspended</option>
-                      </select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => setOpenDialog(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit"
-                      disabled={createAcademyMutation.isPending}
-                    >
-                      {createAcademyMutation.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating...
-                        </>
-                      ) : (
-                        "Create Academy"
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => setLocation("/academies/create")}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Academy
+            </Button>
           )}
         </CardHeader>
         <CardContent>

@@ -11,6 +11,7 @@ import ThemeProvider from "@/components/theme-provider";
 // Dashboard
 import Dashboard from "@/pages/dashboard";
 import Academies from "@/pages/academies";
+import CreateAcademy from "@/pages/academies/create";
 import Exams from "@/pages/exams";
 import Students from "@/pages/students";
 import Certificates from "@/pages/certificates";
@@ -24,6 +25,7 @@ function Router() {
     <Switch>
       <ProtectedRoute path="/" component={Dashboard} />
       <ProtectedRoute path="/academies" component={Academies} />
+      <ProtectedRoute path="/academies/create" component={CreateAcademy} />
       <ProtectedRoute path="/exams" component={Exams} />
       <ProtectedRoute path="/students" component={Students} />
       <ProtectedRoute path="/certificates" component={Certificates} />
