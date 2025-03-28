@@ -117,8 +117,8 @@ export default function Sidebar({ open, setOpen, userRole }: SidebarProps) {
       )}
     >
       {/* Role Indicator */}
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <div className="px-2 py-1 rounded-md bg-primary text-white text-xs font-semibold inline-block">
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center h-12">
+        <div className="px-3 py-1.5 rounded-md bg-primary text-white text-xs font-semibold uppercase">
           <span>{userRole}</span>
         </div>
       </div>
@@ -135,8 +135,8 @@ export default function Sidebar({ open, setOpen, userRole }: SidebarProps) {
                     className={cn(
                       "flex items-center px-4 py-2 text-sm font-medium",
                       location === item.href
-                        ? "text-primary dark:text-accent bg-blue-50 dark:bg-gray-700 border-l-4 border-primary dark:border-accent"
-                        : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-accent"
+                        ? "text-primary dark:text-primary bg-blue-50 dark:bg-blue-900/30 border-l-4 border-primary"
+                        : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-primary"
                     )}
                     onClick={() => isMobile && setOpen(false)}
                   >

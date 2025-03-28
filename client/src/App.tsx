@@ -16,6 +16,8 @@ import Students from "@/pages/students";
 import Certificates from "@/pages/certificates";
 import CertificateView from "@/pages/certificates/view";
 import Profile from "@/pages/profile";
+import Analytics from "@/pages/analytics";
+import Settings from "@/pages/settings";
 
 function Router() {
   return (
@@ -27,6 +29,8 @@ function Router() {
       <ProtectedRoute path="/certificates" component={Certificates} />
       <ProtectedRoute path="/certificates/:id" component={CertificateView} />
       <ProtectedRoute path="/profile" component={Profile} />
+      <ProtectedRoute path="/analytics" component={Analytics} />
+      <ProtectedRoute path="/settings" component={Settings} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
