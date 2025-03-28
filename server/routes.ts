@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { UserRole, Exam } from "@shared/schema";
 import { nanoid } from "nanoid";
-// Payment gateway functionality removed
+import * as stripeService from "./services/stripe-service";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
@@ -602,8 +602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const enrollment = await storage.createEnrollment({
           studentId: req.user.id,
           examId,
-          status: "ENROLLED",
-          isAssigned: isAssigned || false
+          status: "PURCHASED"
         });
         
         res.status(201).json(enrollment);
@@ -635,7 +634,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const enrollment = await storage.createEnrollment({
           studentId,
           examId,
-          status: "ASSIGNED",
+          status: "PURCHASED",
           isAssigned: true
         });
         
@@ -665,7 +664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.sendStatus(403);
     }
     
-    if (enrollment.status !== "ENROLLED" && enrollment.status !== "ASSIGNED") {
+    if (enrollment.status !== "PURCHASED") {
       return res.status(400).json({ message: "Exam has already been started or completed" });
     }
     
@@ -691,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // Only allow removing enrollments that haven't been started
-    if (enrollment.status !== "ENROLLED" && enrollment.status !== "ASSIGNED") {
+    if (enrollment.status !== "PURCHASED") {
       return res.status(400).json({ message: "Cannot remove enrollment once exam has been started or completed" });
     }
     
@@ -1345,8 +1344,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment Routes
-  // Payment gateway functionality removed
-  /* app.post("/api/payment/create-intent", async (req, res) => {
+  // Create a payment intent
+  app.post("/api/payment/create-intent", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
       return res.sendStatus(403);
     }
@@ -1541,7 +1540,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error retrieving checkout session" });
     }
   });
-  */
 
   const httpServer = createServer(app);
   return httpServer;

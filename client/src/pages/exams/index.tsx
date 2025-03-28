@@ -301,7 +301,7 @@ export default function ExamsPage() {
                             </Button>
                           )}
                           
-                          {enrollment && (enrollment.status === "ENROLLED" || enrollment.status === "ASSIGNED") && (
+                          {enrollment && enrollment.status === "PURCHASED" && (
                             <Button 
                               variant="default" 
                               size="sm"

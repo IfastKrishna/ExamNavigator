@@ -1,13 +1,17 @@
-// Implement the storage interface
 import { 
-  User, InsertUser, Academy, InsertAcademy, Exam, InsertExam, 
-  Question, InsertQuestion, Option, InsertOption,
-  Enrollment, InsertEnrollment, Attempt, InsertAttempt,
-  CertificateTemplate, InsertCertificateTemplate, Certificate, InsertCertificate,
+  users, academies, exams, questions, options, 
+  enrollments, attempts, certificates, certificateTemplates,
+  type User, type InsertUser,
+  type Academy, type InsertAcademy,
+  type Exam, type InsertExam,
+  type Question, type InsertQuestion,
+  type Option, type InsertOption,
+  type Enrollment, type InsertEnrollment,
+  type Attempt, type InsertAttempt,
+  type Certificate, type InsertCertificate,
+  type CertificateTemplate, type InsertCertificateTemplate,
   UserRole
 } from "@shared/schema";
-
-// For in-memory session storage
 import session from "express-session";
 import createMemoryStore from "memorystore";
 
@@ -73,7 +77,7 @@ export interface IStorage {
   getCertificateByEnrollment(enrollmentId: number): Promise<Certificate | undefined>;
   
   // Session store
-  sessionStore: session.Store;
+  sessionStore: any;
 }
 
 export class MemStorage implements IStorage {
@@ -86,7 +90,7 @@ export class MemStorage implements IStorage {
   private attempts: Map<number, Attempt>;
   private certificateTemplates: Map<number, CertificateTemplate>;
   private certificates: Map<number, Certificate>;
-  sessionStore: session.Store;
+  sessionStore: any;
   
   private currentIds: {
     users: number;
@@ -99,7 +103,7 @@ export class MemStorage implements IStorage {
     certificateTemplates: number;
     certificates: number;
   };
-  
+
   constructor() {
     this.users = new Map();
     this.academies = new Map();
@@ -127,46 +131,35 @@ export class MemStorage implements IStorage {
       checkPeriod: 86400000 // prune expired entries every 24h
     });
     
-    // Initialize default data after a small delay to avoid circular dependencies
-    setTimeout(() => this.initializeDefaultData(), 100);
-  }
-  
-  // Initialize default data without circular dependencies
-  private async initializeDefaultData() {
-    try {
-      const { hashPassword } = await import('./auth');
+    // Create super admin user with a properly hashed password using our hashing function
+    // The password is set to "admin123" for easy access
+    this.createUser({
+      username: "admin",
+      password: "70c9d83b95543315edd30b5157e75e5b2afe3c72c85e0d0a3341cd14ce2a60ce8d05225afa34b2d4f43c21bd64f03deade4d97b4daa8b168a367faa0af9d667e.41f93f2d87f62d60d5b70e91a7511f61", // "admin123"
+      email: "admin@examportal.com",
+      name: "Super Admin",
+      role: UserRole.SUPER_ADMIN
+    }).then(adminUser => {
       
-      // Create super admin user
-      const adminPassword = await hashPassword("admin123");
-      const adminUser = await this.createUser({
-        username: "admin",
-        password: adminPassword,
-        email: "admin@examportal.com",
-        name: "Super Admin",
-        role: UserRole.SUPER_ADMIN
-      });
-      
-      // Create a preset Academy account
-      const academyPassword = await hashPassword("admin123");
-      const academyUser = await this.createUser({
+      // Create a preset Academy account for direct login
+      this.createUser({
         username: "academy",
-        password: academyPassword,
+        password: "70c9d83b95543315edd30b5157e75e5b2afe3c72c85e0d0a3341cd14ce2a60ce8d05225afa34b2d4f43c21bd64f03deade4d97b4daa8b168a367faa0af9d667e.41f93f2d87f62d60d5b70e91a7511f61", // "admin123"
         email: "academy@examportal.com",
         name: "Demo Academy",
         role: UserRole.ACADEMY
+      }).then(academyUser => {
+        // Create the academy record for this user
+        this.createAcademy({
+          userId: academyUser.id,
+          name: "Demo Academy",
+          description: "A demo academy for testing purposes",
+          logo: "https://via.placeholder.com/150",
+          status: "ACTIVE"
+        });
       });
-      
-      // Create academy record for academy user
-      const academy = await this.createAcademy({
-        userId: academyUser.id,
-        name: "Demo Academy",
-        description: "A demo academy for testing purposes",
-        logo: "https://via.placeholder.com/150",
-        status: "ACTIVE"
-      });
-      
-      // Create classic certificate template
-      await this.createCertificateTemplate({
+      // Create a default certificate template
+      this.createCertificateTemplate({
         name: "Classic Certificate",
         description: "Elegant certificate template with formal styling",
         template: `
@@ -190,7 +183,7 @@ export class MemStorage implements IStorage {
                   <span style="font-size: 16px;">{{academyName}}</span>
                 </div>
                 <div style="width: 200px; float: right; margin-right: 50px; text-align: center;">
-                  <img src="data:image/png;base64,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" alt="Signature" style="width: 150px; height: auto;"><br>
+                  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAYAAADDhn8LAAAHaklEQVR4nO3df4xU5RXG8e+ZWXCNWVzEErMr27q0RauhQkSqJoYSKRGCpaSJgdhqqmkMmiImNmpImqY2/SOp/hE12pimNiF/YGysaQiYkkZtRBGElB9CdWWzCxoSjahZdllm3tM/ZmA3uzt3du69c+/s7vP5i3nPe++cOe/M3Hfm3jMQERERERERERERERERERERERERERERERERERERERERERERERERERGpjqS9A3Ewaw8wE5gBnAFMB84ApvXZ7DCwG9gN7HFuXS+19xPQFuAyYDpFjlLkMPsp8PbCH9J73xRnT+aCtAHtwAJgLjAL+Dzwuby7c8CHwA5gO/AOsK1jXddJv52tF2YtwOfIcCaDXMH5LEqXk0m9PsZBDvEee3mDHrsZmEnuA+dzY7qdw4PvF8vs7gq7f2VLa4HM2oBLgdnAJcAXgXOrdtuJJwN8ALwDvAXsAF7rWNd1pEr3XjVmCwL0xrm1wExm8BVm2Vdtllv0GqCXj3mLt3mLnewevP1jdnM3uzmT82wh9f3AH2A/hXXAemC9c0+Fjq7Ywl6/nDQVyOwi4AHgJxFGGMcTwL8a2jve3x1hvAGZ3RFgFaWaZfyI+TaPr8XQUxjkIH/lL2yz+yj037fcB8AFkCkA/wG2Ol8OsrK4FeQY8ESvN+fWtmJf8PpUzl7gJuAlbwNm0+L1x2w60MZZXMBsm0tTHAeLXsM8iVksZidytf0NeMa5RyOPVs5YLpA8vQZssLa2HWc1tHdsrmL8m4H/+jRo8bNxhpmA8/gW37EmlFNbptA5ux84l3Nd/bsNnuOajaeYdW227ZvP0NFWJHY1V+3YvDiucccdsxOAfYkLuIqbbR6nVtmyh5bV22Ib3azFuSdj6y+PmK7BeYZtxCQrEIC/M/SOb27qlgfogL9ltl9Cq80J1CtXcBVXVBiHvQis9hjRAPAcgFEA9gF/ce7JakVVLo5rcJ5hG+VYIOYepthfeQR+j+1G1oVxjQu59JXM85iTIHZDgO7ziX8cVgD+BLEXCJQtkVgXq8gUqFZi6yvZMXqGbVR7BY6/GjKHAs6MwPtfkuG3QLKBxtYFO+RaA+Yfhw2xFAiMWiIJKZCkxzWVPcM2UoGEZ9YeeJzgH/QbYR9EFoN0n0XwfdhPgXVOAhdIohRIKMZ8IP0FshP4B8GTDnrJ5m+uD9pBAgXyWeDtIANwIIm/IFMlKoNXAAVgHdnTnVjTQtUXpQkUyCzgk4DjLAcuTuh9r6a6FEjgxzRqjIaUvvQgkaWCu+RcsCi2fmLeZnQJFMhnA25vwF3AckLOIidQ7b9i5Eeg4pQrFBVI7I9pXvd24E6CB0k1R2ERbgL75R8lnLR9GFjh3CuJjZ8jFUiNcDLAGmBhAqcCJ5d9+XuBdxN4GnAMeBZY5dyjCfRfNRWpBhUoR7LX9mQZq1OXO4A7o55V7lfsj4T9J0GxvQosA9aOZOvbOKjYx9rLRmAL2eWfcMreKvdzngF8CdTB8i4yPAbcBbzs3LqUx/aW5ANcG9xDdkOWVYk+wmYJHuGkkWcZa6e2kfcC2OTcEymN7E8KKyQj+Z9sAfLF8d2Ux042EYC/5f7+NnCBc+tSGrMiVWkBLNVJT2OoFNIw4vcMW2+tVCCjyHrBHqKawJ8CX+1Y13Uk7cFEvQbneU8YpWdzJlAaX69lV8UqrKJ4DYEW1aZG1Ws4dTuuqVfxjDvuLFvGHCBTAA6QPZPwTsf6RnXEHIRZIrMfB3v0mT3ANfVyCxIzxWoqpDQJpAIJIc+X3w+JOMRJ4HngOmBdPdyCBGSQXQW7J9j2xpJAAxdTXapYQZj9OXDrgxx4a1/fT93OYg1EsxNDw48QfItE/Eu7QKLOBSj20Uu8lXQAaQpQIBa8QMrMdxpwq0STVsWKerxCr5Y1Eq2QpTURSvk9SLqnTSLVowoVREonPeVSJBrVq6Cizkeon+UEqSfJTHqKo+LE/B44vIZ3Rlxn78a4g6YKaQKVjsrqXqnYR+PzMb02aOKPRInaEQXge0HG0OyxNFKFCqh3ByWzKPQOdMHuQ+2LgnRQRz6JcVsbFWs6BRWIQUMVXsipP1EnRVd2/mT3uoYpjP6fLZE6HLOgdSpAHvkMkhIJ1F8Zfxgpj2vVkqhSwz+a9hZIE34gjcUsSCmXK5qEiyTlMavE4hk2TQUSgNnpwCVBu0/5GKKSHP+yWfHQyHtfY95mcZprKZBgrgBODdx7ej96G0SZSWWgv2kBsjMO9JgmLlGqWAHMDjFCimcHcRgw5clQrVRZKu4n8+Mu8zZLfFwDFUhQhbRHDy1MP62ypzCDTsYeap5TyGmrpx8Rkk8qkECMw6GPwQZMIlT36Y9ZCDm2MWfqI7yfzMfCR3UrkMAmAa2he8/gR4MaTjVvPZLdLrPx+fE21eDj5hkW1a1q0TJJiJJeJiDtHcjHODy5aMJPdBpDwlsfJbZ/mTf4V41irr+pWKGsAFYG35mxuKpjPEL3yGupuHwrfvpYZXwSS+fhtvGXvXd5vJ+JiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIhU6v9sAbCx2vETswAAAABJRU5ErkJggg==" alt="Signature" style="width: 150px; height: auto;"><br>
                   <span style="font-size: 16px;">Authorized Signature</span>
                 </div>
               </div>
@@ -205,8 +198,8 @@ export class MemStorage implements IStorage {
         status: "ACTIVE"
       });
       
-      // Create modern certificate template
-      await this.createCertificateTemplate({
+      // Create a modern template
+      this.createCertificateTemplate({
         name: "Modern Certificate",
         description: "Clean, modern design with minimalist styling",
         template: `
@@ -231,11 +224,7 @@ export class MemStorage implements IStorage {
         isDefault: false,
         status: "ACTIVE"
       });
-      
-      console.log("Default data initialized successfully");
-    } catch (error) {
-      console.error("Error initializing default data:", error);
-    }
+    });
   }
 
   // User methods
@@ -326,18 +315,7 @@ export class MemStorage implements IStorage {
   async createExam(insertExam: InsertExam): Promise<Exam> {
     const id = this.currentIds.exams++;
     const now = new Date();
-    const exam: Exam = { 
-      ...insertExam, 
-      id, 
-      createdAt: now,
-      description: insertExam.description || null,
-      status: insertExam.status || "DRAFT",
-      price: insertExam.price ?? 0,
-      examDate: insertExam.examDate || null,
-      examTime: insertExam.examTime || null,
-      certificateTemplateId: insertExam.certificateTemplateId || null,
-      manualReview: insertExam.manualReview ?? false
-    };
+    const exam: Exam = { ...insertExam, id, createdAt: now };
     this.exams.set(id, exam);
     return exam;
   }
@@ -369,13 +347,7 @@ export class MemStorage implements IStorage {
   async createQuestion(insertQuestion: InsertQuestion): Promise<Question> {
     const id = this.currentIds.questions++;
     const now = new Date();
-    const question: Question = { 
-      ...insertQuestion, 
-      id, 
-      createdAt: now,
-      type: insertQuestion.type || "MULTIPLE_CHOICE",
-      points: insertQuestion.points || 1
-    };
+    const question: Question = { ...insertQuestion, id, createdAt: now };
     this.questions.set(id, question);
     return question;
   }
@@ -403,12 +375,7 @@ export class MemStorage implements IStorage {
   async createOption(insertOption: InsertOption): Promise<Option> {
     const id = this.currentIds.options++;
     const now = new Date();
-    const option: Option = { 
-      ...insertOption, 
-      id, 
-      createdAt: now,
-      isCorrect: insertOption.isCorrect !== undefined ? insertOption.isCorrect : false
-    };
+    const option: Option = { ...insertOption, id, createdAt: now };
     this.options.set(id, option);
     return option;
   }
@@ -431,12 +398,11 @@ export class MemStorage implements IStorage {
       ...insertEnrollment, 
       id, 
       createdAt: now,
-      status: insertEnrollment.status || "ENROLLED",
       startedAt: null,
       completedAt: null,
       score: null,
       certificateId: null,
-      isAssigned: insertEnrollment.isAssigned ?? null
+      isAssigned: insertEnrollment.isAssigned ?? false
     };
     this.enrollments.set(id, enrollment);
     return enrollment;
@@ -475,14 +441,7 @@ export class MemStorage implements IStorage {
   async createAttempt(insertAttempt: InsertAttempt): Promise<Attempt> {
     const id = this.currentIds.attempts++;
     const now = new Date();
-    const attempt: Attempt = { 
-      ...insertAttempt, 
-      id, 
-      createdAt: now, 
-      isCorrect: insertAttempt.isCorrect ?? null,
-      selectedOptionId: insertAttempt.selectedOptionId ?? null,
-      textAnswer: insertAttempt.textAnswer ?? null
-    };
+    const attempt: Attempt = { ...insertAttempt, id, createdAt: now };
     this.attempts.set(id, attempt);
     return attempt;
   }
@@ -500,9 +459,8 @@ export class MemStorage implements IStorage {
     const certificate: Certificate = { 
       ...insertCertificate, 
       id, 
-      createdAt: now, 
-      issueDate: insertCertificate.issueDate || now,
-      customizations: insertCertificate.customizations || null
+      issueDate: now,
+      createdAt: now 
     };
     this.certificates.set(id, certificate);
     return certificate;
@@ -529,35 +487,38 @@ export class MemStorage implements IStorage {
       (certificate) => certificate.enrollmentId === enrollmentId
     );
   }
-  
+
   // Certificate Template methods
   async createCertificateTemplate(insertTemplate: InsertCertificateTemplate): Promise<CertificateTemplate> {
     const id = this.currentIds.certificateTemplates++;
     const now = new Date();
     
-    // If this is the first template created, make it the default
-    // Or if isDefault is true, make sure other templates are not defaults
-    const isDefault = insertTemplate.isDefault || this.certificateTemplates.size === 0;
-    
-    if (isDefault) {
-      // Set all other templates to not be default
-      for (const template of this.certificateTemplates.values()) {
-        if (template.isDefault) {
-          template.isDefault = false;
-          this.certificateTemplates.set(template.id, template);
-        }
-      }
-    }
+    // Ensure required fields have values
+    const status = insertTemplate.status || "ACTIVE";
+    const description = insertTemplate.description || null;
+    const isDefault = insertTemplate.isDefault !== undefined ? insertTemplate.isDefault : false;
     
     const template: CertificateTemplate = { 
       ...insertTemplate, 
       id, 
-      createdAt: now, 
-      isDefault,
-      status: insertTemplate.status || "ACTIVE",
-      description: insertTemplate.description || null,
+      createdAt: now,
+      status,
+      description,
+      isDefault
     };
     this.certificateTemplates.set(id, template);
+    
+    // If marked as default, update all other templates to non-default
+    if (template.isDefault) {
+      // Convert entries to array before iteration to avoid downlevelIteration issues
+      const entries = Array.from(this.certificateTemplates.entries());
+      for (const [tid, t] of entries) {
+        if (tid !== id && t.isDefault) {
+          this.certificateTemplates.set(tid, { ...t, isDefault: false });
+        }
+      }
+    }
+    
     return template;
   }
   
@@ -580,18 +541,19 @@ export class MemStorage implements IStorage {
     if (!template) return undefined;
     
     const updatedTemplate = { ...template, ...templateData };
+    this.certificateTemplates.set(id, updatedTemplate);
     
-    // If setting this template as default, un-set any other default templates
-    if (templateData.isDefault) {
-      for (const t of this.certificateTemplates.values()) {
-        if (t.id !== id && t.isDefault) {
-          t.isDefault = false;
-          this.certificateTemplates.set(t.id, t);
+    // If marked as default, update all other templates to non-default
+    if (updatedTemplate.isDefault) {
+      // Convert entries to array before iteration to avoid downlevelIteration issues
+      const entries = Array.from(this.certificateTemplates.entries());
+      for (const [tid, t] of entries) {
+        if (tid !== id && t.isDefault) {
+          this.certificateTemplates.set(tid, { ...t, isDefault: false });
         }
       }
     }
     
-    this.certificateTemplates.set(id, updatedTemplate);
     return updatedTemplate;
   }
 }
