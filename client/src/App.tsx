@@ -13,12 +13,17 @@ import Dashboard from "@/pages/dashboard";
 import Academies from "@/pages/academies";
 import CreateAcademy from "@/pages/academies/create";
 import Exams from "@/pages/exams";
+import AvailableExams from "@/pages/exams/available-exams";
 import Students from "@/pages/students";
 import Certificates from "@/pages/certificates";
 import CertificateView from "@/pages/certificates/view";
 import Profile from "@/pages/profile";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
+
+// Payment Pages
+import PaymentSuccessPage from "@/pages/payment/success";
+import PaymentCancelPage from "@/pages/payment/cancel";
 
 function Router() {
   return (
@@ -27,12 +32,15 @@ function Router() {
       <ProtectedRoute path="/academies" component={Academies} />
       <ProtectedRoute path="/academies/create" component={CreateAcademy} />
       <ProtectedRoute path="/exams" component={Exams} />
+      <ProtectedRoute path="/available-exams" component={AvailableExams} />
       <ProtectedRoute path="/students" component={Students} />
       <ProtectedRoute path="/certificates" component={Certificates} />
       <ProtectedRoute path="/certificates/:id" component={CertificateView} />
       <ProtectedRoute path="/profile" component={Profile} />
       <ProtectedRoute path="/analytics" component={Analytics} />
       <ProtectedRoute path="/settings" component={Settings} />
+      <ProtectedRoute path="/payment/success" component={PaymentSuccessPage} />
+      <ProtectedRoute path="/payment/cancel" component={PaymentCancelPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

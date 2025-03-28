@@ -36,6 +36,7 @@ export interface IStorage {
   createExam(exam: InsertExam): Promise<Exam>;
   getExam(id: number): Promise<Exam | undefined>;
   getExamsByAcademy(academyId: number): Promise<Exam[]>;
+  getAllExams(): Promise<Exam[]>;
   updateExam(id: number, exam: Partial<Exam>): Promise<Exam | undefined>;
   
   // Question methods
@@ -327,6 +328,10 @@ export class MemStorage implements IStorage {
     return Array.from(this.exams.values()).filter(
       (exam) => exam.academyId === academyId
     );
+  }
+  
+  async getAllExams(): Promise<Exam[]> {
+    return Array.from(this.exams.values());
   }
   
   async updateExam(id: number, examData: Partial<Exam>): Promise<Exam | undefined> {

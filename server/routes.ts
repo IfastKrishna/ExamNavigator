@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { UserRole } from "@shared/schema";
+import { UserRole, Exam } from "@shared/schema";
 import { nanoid } from "nanoid";
+import * as stripeService from "./services/stripe-service";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
@@ -176,29 +177,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Academy not found for this user" });
       }
       
-      // Get all academies (to find all possible exams)
-      const allAcademies = await storage.getAcademies();
+      // Get all exams
+      const allExams = await storage.getAllExams();
       let availableExams = [];
       
-      for (const academy of allAcademies) {
-        // Skip the current academy's exams (they already own them)
-        if (academy.id === currentAcademy.id) continue;
+      // Filter exams that are published, have a price, and not owned by the current academy
+      const publishedExams = allExams.filter((exam: Exam) => 
+        exam.academyId !== currentAcademy.id && 
+        exam.status === "PUBLISHED" && 
+        exam.price && 
+        exam.price > 0
+      );
         
-        // Get exams from this academy and filter to show only published exams
-        const academyExams = await storage.getExamsByAcademy(academy.id);
-        const publishedExams = academyExams.filter(exam => 
-          exam.status === "PUBLISHED" && exam.price && exam.price > 0
-        );
-        
-        if (publishedExams.length > 0) {
-          // Add academy information
-          const examsWithAcademyInfo = publishedExams.map(exam => ({
+      // Add academy information to each exam
+      for (const exam of publishedExams) {
+        const academy = await storage.getAcademy(exam.academyId);
+        if (academy) {
+          availableExams.push({
             ...exam,
             academyName: academy.name,
             academyLogo: academy.logo
-          }));
-          
-          availableExams.push(...examsWithAcademyInfo);
+          });
         }
       }
       
@@ -1341,6 +1340,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error generating exam analytics:", error);
       res.status(500).json({ message: "Failed to generate exam performance data" });
+    }
+  });
+
+  // Payment Routes
+  // Create a payment intent
+  app.post("/api/payment/create-intent", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const { examId } = req.body;
+      
+      if (!examId) {
+        return res.status(400).json({ message: "Exam ID is required" });
+      }
+      
+      const exam = await storage.getExam(parseInt(examId));
+      
+      if (!exam) {
+        return res.status(404).json({ message: "Exam not found" });
+      }
+      
+      if (!exam.price) {
+        return res.status(400).json({ message: "Exam doesn't have a price" });
+      }
+      
+      // Create a payment intent
+      const paymentIntent = await stripeService.createPaymentIntent({
+        amount: exam.price * 100, // convert dollars to cents
+        currency: "usd",
+        description: `Payment for exam: ${exam.title}`,
+        metadata: {
+          examId: exam.id.toString(),
+          academyId: exam.academyId.toString(),
+          buyerUserId: req.user.id.toString()
+        }
+      });
+      
+      res.json({
+        clientSecret: paymentIntent.client_secret,
+        amount: exam.price
+      });
+    } catch (error) {
+      console.error("Payment intent creation error:", error);
+      res.status(500).json({ message: "Error creating payment intent" });
+    }
+  });
+  
+  // Create a checkout session
+  app.post("/api/payment/create-checkout", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const { examId } = req.body;
+      
+      if (!examId) {
+        return res.status(400).json({ message: "Exam ID is required" });
+      }
+      
+      const exam = await storage.getExam(parseInt(examId));
+      
+      if (!exam) {
+        return res.status(404).json({ message: "Exam not found" });
+      }
+      
+      if (!exam.price) {
+        return res.status(400).json({ message: "Exam doesn't have a price" });
+      }
+      
+      // Create a checkout session
+      const session = await stripeService.createCheckoutSession({
+        lineItems: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: exam.title,
+                description: exam.description || undefined,
+              },
+              unit_amount: exam.price * 100, // convert dollars to cents
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        successUrl: `${req.headers.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${req.headers.origin}/payment/cancel`,
+        metadata: {
+          examId: exam.id.toString(),
+          academyId: exam.academyId.toString(),
+          buyerUserId: req.user.id.toString()
+        }
+      });
+      
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Checkout session creation error:", error);
+      res.status(500).json({ message: "Error creating checkout session" });
+    }
+  });
+  
+  // Payment success webhook
+  app.post("/api/payment/webhook", async (req, res) => {
+    const signature = req.headers['stripe-signature'] as string;
+    
+    // In a production environment, you would have a webhook secret
+    // For now, we'll skip signature verification in development
+    
+    try {
+      const event = req.body;
+      
+      if (event.type === 'payment_intent.succeeded') {
+        const paymentIntent = event.data.object;
+        const { examId, buyerUserId } = paymentIntent.metadata;
+        
+        // Process the successful payment
+        // Find the academy for the buyer
+        const user = await storage.getUser(parseInt(buyerUserId));
+        if (!user || user.role !== UserRole.ACADEMY) {
+          throw new Error("User not found or not an academy");
+        }
+        
+        const buyerAcademy = await storage.getAcademyByUserId(parseInt(buyerUserId));
+        if (!buyerAcademy) {
+          throw new Error("Academy not found for this user");
+        }
+        
+        // Get the exam to purchase
+        const examToPurchase = await storage.getExam(parseInt(examId));
+        if (!examToPurchase) {
+          throw new Error("Exam not found");
+        }
+        
+        // Create a copy of the exam for this academy (similar to the existing purchase route)
+        const newExam = await storage.createExam({
+          title: examToPurchase.title,
+          description: examToPurchase.description,
+          duration: examToPurchase.duration,
+          academyId: buyerAcademy.id,
+          passingScore: examToPurchase.passingScore,
+          status: "DRAFT", // Set as draft until the academy publishes it
+          price: 0, // Reset price for the academy's copy
+          examDate: examToPurchase.examDate,
+          examTime: examToPurchase.examTime,
+          certificateTemplateId: examToPurchase.certificateTemplateId,
+          manualReview: examToPurchase.manualReview
+        });
+        
+        // Copy all questions and options
+        const originalQuestions = await storage.getQuestionsByExam(examToPurchase.id);
+        
+        for (const originalQuestion of originalQuestions) {
+          // Create the question
+          const newQuestion = await storage.createQuestion({
+            examId: newExam.id,
+            text: originalQuestion.text,
+            type: originalQuestion.type,
+            points: originalQuestion.points
+          });
+          
+          // Get and copy the options
+          const originalOptions = await storage.getOptionsByQuestion(originalQuestion.id);
+          for (const originalOption of originalOptions) {
+            await storage.createOption({
+              questionId: newQuestion.id,
+              text: originalOption.text,
+              isCorrect: originalOption.isCorrect
+            });
+          }
+        }
+        
+        console.log(`Exam purchased successfully: ${newExam.title}`);
+      }
+      
+      res.json({ received: true });
+    } catch (error) {
+      console.error('Webhook error:', error);
+      res.status(400).send(`Webhook Error: ${error.message}`);
+    }
+  });
+  
+  // Payment success page data
+  app.get("/api/payment/session/:sessionId", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    
+    try {
+      const { sessionId } = req.params;
+      const session = await stripeService.retrieveCheckoutSession(sessionId);
+      
+      res.json({ session });
+    } catch (error) {
+      console.error("Error retrieving checkout session:", error);
+      res.status(500).json({ message: "Error retrieving checkout session" });
     }
   });
 

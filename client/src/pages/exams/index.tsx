@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Plus, Eye, Edit, MoreHorizontal, Play, BookOpen } from "lucide-react";
+import { Loader2, Plus, Eye, Edit, MoreHorizontal, Play, BookOpen, ShoppingCart } from "lucide-react";
 import AssignStudentsDialog from "@/components/exams/assign-students-dialog";
 import { formatCurrency } from "@/lib/utils";
 
@@ -45,7 +45,7 @@ export default function ExamsPage() {
   });
 
   // Fetch enrollments for students
-  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useQuery({
+  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useQuery<any[]>({
     queryKey: ["/api/enrollments"],
     enabled: user?.role === UserRole.STUDENT,
   });
@@ -177,12 +177,20 @@ export default function ExamsPage() {
               </Tabs>
             )}
           </div>
-          {canCreateExam && (
-            <Button onClick={() => setLocation("/exams/create")}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Exam
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {user?.role === UserRole.ACADEMY && (
+              <Button variant="outline" onClick={() => setLocation("/available-exams")}>
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Marketplace
+              </Button>
+            )}
+            {canCreateExam && (
+              <Button onClick={() => setLocation("/exams/create")}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Exam
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {getProcessedExams().length === 0 ? (
@@ -295,7 +303,7 @@ export default function ExamsPage() {
                           
                           {enrollment && enrollment.status === "PURCHASED" && (
                             <Button 
-                              variant="primary" 
+                              variant="default" 
                               size="sm"
                               onClick={() => startExamMutation.mutate(enrollment.id)}
                               disabled={startExamMutation.isPending}
@@ -311,7 +319,7 @@ export default function ExamsPage() {
                           
                           {enrollment && enrollment.status === "STARTED" && (
                             <Button 
-                              variant="primary" 
+                              variant="default" 
                               size="sm"
                               onClick={() => setLocation(`/exams/${exam.id}/take`)}
                             >
