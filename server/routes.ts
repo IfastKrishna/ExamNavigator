@@ -191,19 +191,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   app.post("/api/exams", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.SUPER_ADMIN) {
       return res.sendStatus(403);
     }
     
     try {
-      const academy = await storage.getAcademyByUserId(req.user.id);
+      // Super Admin needs to specify an academyId in the request
+      const academyId = req.body.academyId;
+      if (!academyId) {
+        return res.status(400).json({ message: "Academy ID is required" });
+      }
+      
+      // Check if the academy exists
+      const academy = await storage.getAcademy(academyId);
       if (!academy) {
-        return res.status(404).json({ message: "Academy not found for this user" });
+        return res.status(404).json({ message: "Academy not found" });
       }
       
       const examData = {
         ...req.body,
-        academyId: academy.id
+        academyId
       };
       
       const exam = await storage.createExam(examData);
@@ -214,8 +221,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   app.put("/api/exams/:id", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
-      return res.sendStatus(403);
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
     }
     
     const examId = parseInt(req.params.id);
@@ -225,13 +232,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "Exam not found" });
     }
     
-    const academy = await storage.getAcademyByUserId(req.user.id);
-    if (!academy || academy.id !== exam.academyId) {
-      return res.sendStatus(403);
+    // Super Admin can edit any exam
+    if (req.user.role === UserRole.SUPER_ADMIN) {
+      const updatedExam = await storage.updateExam(examId, req.body);
+      return res.json(updatedExam);
     }
     
-    const updatedExam = await storage.updateExam(examId, req.body);
-    res.json(updatedExam);
+    // Academy users can only edit their own exams
+    if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy || academy.id !== exam.academyId) {
+        return res.sendStatus(403);
+      }
+      
+      const updatedExam = await storage.updateExam(examId, req.body);
+      return res.json(updatedExam);
+    }
+    
+    // Students cannot edit exams
+    return res.sendStatus(403);
   });
   
   // Questions and Options
@@ -283,8 +302,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   app.post("/api/exams/:examId/questions", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
-      return res.sendStatus(403);
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
     }
     
     const examId = parseInt(req.params.examId);
@@ -294,8 +313,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "Exam not found" });
     }
     
-    const academy = await storage.getAcademyByUserId(req.user.id);
-    if (!academy || academy.id !== exam.academyId) {
+    // Super Admin can add questions to any exam
+    if (req.user.role === UserRole.SUPER_ADMIN) {
+      // Continue with question creation
+    }
+    // Academy users can only add questions to their own exams
+    else if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy || academy.id !== exam.academyId) {
+        return res.sendStatus(403);
+      }
+    }
+    // Students cannot add questions
+    else {
       return res.sendStatus(403);
     }
     

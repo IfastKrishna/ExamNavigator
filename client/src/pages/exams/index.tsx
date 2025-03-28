@@ -131,8 +131,8 @@ export default function ExamsPage() {
     return examsWithAcademyNames;
   };
 
-  // Determine if user can create exams (academy and super admin users only)
-  const canCreateExam = user?.role === UserRole.ACADEMY || user?.role === UserRole.SUPER_ADMIN;
+  // Determine if user can create exams (only super admin can create exams)
+  const canCreateExam = user?.role === UserRole.SUPER_ADMIN;
   
   // Determine if user can enroll in exams (student users only)
   const canEnrollInExam = user?.role === UserRole.STUDENT;
@@ -191,6 +191,8 @@ export default function ExamsPage() {
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">No Exams Found</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-md">
                 {user?.role === UserRole.ACADEMY
+                  ? "No exams have been assigned to your academy yet. Contact the Super Admin to assign exams."
+                  : user?.role === UserRole.SUPER_ADMIN 
                   ? "Get started by creating your first exam using the 'Create Exam' button above."
                   : user?.role === UserRole.STUDENT && activeTab === "available"
                   ? "There are currently no available exams to enroll in."
@@ -330,6 +332,15 @@ export default function ExamsPage() {
                                   <Eye className="h-4 w-4 mr-2" />
                                   View
                                 </DropdownMenuItem>
+                                {/* Super Admin can edit any exam */}
+                                {user?.role === UserRole.SUPER_ADMIN && (
+                                  <DropdownMenuItem onClick={() => setLocation(`/exams/${exam.id}/edit`)}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+                                
+                                {/* Academy users can only edit their exams */}
                                 {user?.role === UserRole.ACADEMY && (
                                   <>
                                     <DropdownMenuItem onClick={() => setLocation(`/exams/${exam.id}/edit`)}>

@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { insertExamSchema, insertQuestionSchema } from "@shared/schema";
+import { insertExamSchema, insertQuestionSchema, UserRole, type Academy } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Form,
   FormControl,
@@ -82,12 +83,22 @@ type ExamFormProps = {
 export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [questions, setQuestions] = useState<z.infer<typeof questionWithOptionsSchema>[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<z.infer<typeof questionWithOptionsSchema> | null>(null);
   const [isAddingQuestion, setIsAddingQuestion] = useState(false);
   const [isEditingQuestion, setIsEditingQuestion] = useState(false);
   const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+  
+  // Check if user is Super Admin
+  const isSuperAdmin = user?.role === UserRole.SUPER_ADMIN;
+  
+  // Fetch academies for Super Admin to select from
+  const { data: academies = [] } = useQuery<Academy[]>({
+    queryKey: ["/api/academies"],
+    enabled: isSuperAdmin,
+  });
 
   // Form for the exam details
   const form = useForm<z.infer<typeof examFormSchema>>({
@@ -194,10 +205,28 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
       return;
     }
     
+    // For Super Admin, ensure an academy is selected
+    if (isSuperAdmin && !data.academyId) {
+      toast({
+        title: "Academy Required",
+        description: "Please select an academy for this exam.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // For non-Super Admin users, get their academy data
+    let finalData = data;
+    
+    if (!isSuperAdmin && user?.role === UserRole.ACADEMY) {
+      const academy = academies.find(a => a.userId === user.id);
+      finalData = { ...data, academyId: academy?.id || 0 };
+    }
+    
     if (examId) {
-      updateExamMutation.mutate(data);
+      updateExamMutation.mutate(finalData);
     } else {
-      createExamMutation.mutate(data);
+      createExamMutation.mutate(finalData);
     }
   };
 
@@ -365,6 +394,39 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
                   )}
                 />
               </div>
+              {isSuperAdmin && (
+                <FormField
+                  control={form.control}
+                  name="academyId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Academy</FormLabel>
+                      <Select 
+                        onValueChange={(value) => field.onChange(parseInt(value))} 
+                        defaultValue={field.value ? field.value.toString() : undefined}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select academy" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {academies.map((academy) => (
+                            <SelectItem key={academy.id} value={academy.id.toString()}>
+                              {academy.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Select the academy this exam will be assigned to.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              
               <FormField
                 control={form.control}
                 name="status"
