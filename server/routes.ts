@@ -865,6 +865,349 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics endpoints
+  app.get("/api/analytics/academy-performance", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    let academyId: number | undefined;
+    
+    // For academy users, get their academy ID
+    if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      academyId = academy.id;
+    } 
+    // For super admin, allow filtering by academy ID
+    else if (req.user.role === UserRole.SUPER_ADMIN && req.query.academyId) {
+      academyId = parseInt(req.query.academyId as string);
+    }
+    // Students cannot access this endpoint
+    else if (req.user.role === UserRole.STUDENT) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      // Get all exams for the academy
+      const exams = academyId 
+        ? await storage.getExamsByAcademy(academyId)
+        : (await storage.getAcademies())
+            .flatMap(async (academy) => await storage.getExamsByAcademy(academy.id));
+      
+      // Get all enrollments for the exams
+      const enrollmentsPromises = exams.map(async (exam) => {
+        return await storage.getEnrollmentsByExam(exam.id);
+      });
+      
+      const examEnrollments = await Promise.all(enrollmentsPromises);
+      
+      // Process and transform the data for the performance stats
+      const now = new Date();
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(now.getMonth() - 6);
+      
+      // Create monthly buckets for the last 6 months
+      const months = [];
+      for (let i = 0; i < 6; i++) {
+        const month = new Date();
+        month.setMonth(now.getMonth() - i);
+        months.unshift({
+          name: month.toLocaleString('default', { month: 'short' }),
+          year: month.getFullYear(),
+          month: month.getMonth(),
+          passRate: 0,
+          examsTaken: 0,
+          completionRate: 0,
+          totalEnrollments: 0,
+        });
+      }
+      
+      // Process enrollment data by month
+      let totalPassed = 0;
+      let totalTaken = 0;
+      
+      examEnrollments.flat().forEach(enrollment => {
+        if (!enrollment.createdAt) return;
+        
+        const enrollmentDate = new Date(enrollment.createdAt);
+        const monthIndex = months.findIndex(m => 
+          m.year === enrollmentDate.getFullYear() && 
+          m.month === enrollmentDate.getMonth()
+        );
+        
+        if (monthIndex >= 0) {
+          months[monthIndex].totalEnrollments++;
+          
+          if (enrollment.status === 'COMPLETED') {
+            months[monthIndex].examsTaken++;
+            totalTaken++;
+            
+            if (enrollment.score >= enrollment.passingScore) {
+              months[monthIndex].passRate++;
+              totalPassed++;
+            }
+          }
+        }
+      });
+      
+      // Calculate the percentages
+      months.forEach(month => {
+        if (month.examsTaken > 0) {
+          month.passRate = Math.round((month.passRate / month.examsTaken) * 100);
+        }
+        if (month.totalEnrollments > 0) {
+          month.completionRate = Math.round((month.examsTaken / month.totalEnrollments) * 100);
+        }
+      });
+      
+      // Calculate overall stats
+      const overallPassRate = totalTaken > 0 ? Math.round((totalPassed / totalTaken) * 100) : 0;
+      
+      // Get total students count
+      const students = await storage.getUsersByRole(UserRole.STUDENT);
+      
+      // Get academy or academies info
+      const academyInfo = academyId 
+        ? await storage.getAcademy(academyId)
+        : { name: "All Academies" };
+        
+      // Return formatted analytics data
+      res.json({
+        monthly: months,
+        overall: {
+          totalExams: exams.length,
+          totalEnrollments: examEnrollments.flat().length,
+          totalStudents: students.length,
+          overallPassRate,
+        },
+        academy: academyInfo
+      });
+    } catch (error) {
+      console.error("Error generating analytics:", error);
+      res.status(500).json({ message: "Failed to generate analytics data" });
+    }
+  });
+  
+  app.get("/api/analytics/exam-categories", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    let academyId: number | undefined;
+    
+    // For academy users, get their academy ID
+    if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      academyId = academy.id;
+    } 
+    // For super admin, allow filtering by academy ID
+    else if (req.user.role === UserRole.SUPER_ADMIN && req.query.academyId) {
+      academyId = parseInt(req.query.academyId as string);
+    }
+    
+    try {
+      // Get all exams
+      const exams = academyId 
+        ? await storage.getExamsByAcademy(academyId)
+        : (await storage.getAcademies())
+            .flatMap(async (academy) => await storage.getExamsByAcademy(academy.id));
+      
+      // Create categories based on exam titles or descriptions
+      // This is a simplified approach - in a real system, exams would have categories
+      const categories = new Map();
+      
+      exams.forEach(exam => {
+        // Simple categorization based on title keywords
+        let category = "Other";
+        const title = exam.title.toLowerCase();
+        
+        if (title.includes("program") || title.includes("code") || title.includes("develop")) {
+          category = "Programming";
+        } else if (title.includes("design") || title.includes("art") || title.includes("creative")) {
+          category = "Design";
+        } else if (title.includes("market") || title.includes("business") || title.includes("sales")) {
+          category = "Business";
+        } else if (title.includes("science") || title.includes("math") || title.includes("physics")) {
+          category = "Science";
+        }
+        
+        if (categories.has(category)) {
+          categories.set(category, categories.get(category) + 1);
+        } else {
+          categories.set(category, 1);
+        }
+      });
+      
+      // Convert to array format for charts
+      const categoryData = Array.from(categories.entries()).map(([name, value]) => ({
+        name,
+        value
+      }));
+      
+      res.json(categoryData);
+    } catch (error) {
+      console.error("Error generating category analytics:", error);
+      res.status(500).json({ message: "Failed to generate category data" });
+    }
+  });
+  
+  app.get("/api/analytics/student-performance", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    let academyId: number | undefined;
+    
+    // For academy users, get their academy ID
+    if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      academyId = academy.id;
+    } 
+    // For super admin, allow filtering by academy ID
+    else if (req.user.role === UserRole.SUPER_ADMIN && req.query.academyId) {
+      academyId = parseInt(req.query.academyId as string);
+    }
+    // Students can only see their own performance
+    else if (req.user.role === UserRole.STUDENT) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      // Get exams for this academy
+      const exams = academyId 
+        ? await storage.getExamsByAcademy(academyId)
+        : [];
+      
+      // Get enrollments for these exams
+      const enrollments = await Promise.all(
+        exams.map(async exam => await storage.getEnrollmentsByExam(exam.id))
+      );
+      
+      // Flatten the enrollments
+      const allEnrollments = enrollments.flat();
+      
+      // Get unique student IDs
+      const studentIds = [...new Set(allEnrollments.map(e => e.studentId))];
+      
+      // Get student data for each ID
+      const studentData = await Promise.all(
+        studentIds.map(async id => {
+          const user = await storage.getUser(id);
+          const studentEnrollments = allEnrollments.filter(e => e.studentId === id);
+          
+          // Calculate student metrics
+          const totalExams = studentEnrollments.length;
+          const completedExams = studentEnrollments.filter(e => e.status === 'COMPLETED').length;
+          const passedExams = studentEnrollments.filter(
+            e => e.status === 'COMPLETED' && e.score >= e.passingScore
+          ).length;
+          
+          // Calculate average score
+          const scores = studentEnrollments
+            .filter(e => e.status === 'COMPLETED')
+            .map(e => e.score);
+          
+          const avgScore = scores.length > 0
+            ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+            : 0;
+          
+          return {
+            id: id,
+            name: user ? user.name : `Student ${id}`,
+            totalExams,
+            completedExams,
+            passedExams,
+            avgScore,
+            passRate: completedExams > 0 ? Math.round((passedExams / completedExams) * 100) : 0
+          };
+        })
+      );
+      
+      // Sort by pass rate
+      studentData.sort((a, b) => b.passRate - a.passRate);
+      
+      res.json(studentData);
+    } catch (error) {
+      console.error("Error generating student analytics:", error);
+      res.status(500).json({ message: "Failed to generate student performance data" });
+    }
+  });
+  
+  app.get("/api/analytics/exam-performance", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    let academyId: number | undefined;
+    
+    // For academy users, get their academy ID
+    if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      academyId = academy.id;
+    } 
+    // For super admin, allow filtering by academy ID
+    else if (req.user.role === UserRole.SUPER_ADMIN && req.query.academyId) {
+      academyId = parseInt(req.query.academyId as string);
+    }
+    
+    try {
+      // Get exams for this academy
+      const exams = academyId 
+        ? await storage.getExamsByAcademy(academyId)
+        : [];
+      
+      // Get performance data for each exam
+      const examData = await Promise.all(
+        exams.map(async exam => {
+          const enrollments = await storage.getEnrollmentsByExam(exam.id);
+          
+          // Calculate metrics
+          const totalEnrollments = enrollments.length;
+          const completedEnrollments = enrollments.filter(e => e.status === 'COMPLETED').length;
+          const passedEnrollments = enrollments.filter(
+            e => e.status === 'COMPLETED' && e.score >= e.passingScore
+          ).length;
+          
+          // Calculate average scores
+          const scores = enrollments
+            .filter(e => e.status === 'COMPLETED')
+            .map(e => e.score);
+          
+          const avgScore = scores.length > 0
+            ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+            : 0;
+          
+          return {
+            id: exam.id,
+            title: exam.title,
+            totalEnrollments,
+            completedEnrollments,
+            passedEnrollments,
+            avgScore,
+            passRate: completedEnrollments > 0 
+              ? Math.round((passedEnrollments / completedEnrollments) * 100) 
+              : 0,
+            completionRate: totalEnrollments > 0 
+              ? Math.round((completedEnrollments / totalEnrollments) * 100) 
+              : 0
+          };
+        })
+      );
+      
+      // Sort by number of enrollments (most popular)
+      examData.sort((a, b) => b.totalEnrollments - a.totalEnrollments);
+      
+      res.json(examData);
+    } catch (error) {
+      console.error("Error generating exam analytics:", error);
+      res.status(500).json({ message: "Failed to generate exam performance data" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
