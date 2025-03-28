@@ -1,6 +1,6 @@
 import { 
   users, academies, exams, questions, options, 
-  enrollments, attempts, certificates,
+  enrollments, attempts, certificates, certificateTemplates,
   type User, type InsertUser,
   type Academy, type InsertAcademy,
   type Exam, type InsertExam,
@@ -9,6 +9,7 @@ import {
   type Enrollment, type InsertEnrollment,
   type Attempt, type InsertAttempt,
   type Certificate, type InsertCertificate,
+  type CertificateTemplate, type InsertCertificateTemplate,
   UserRole
 } from "@shared/schema";
 import session from "express-session";
@@ -59,6 +60,13 @@ export interface IStorage {
   createAttempt(attempt: InsertAttempt): Promise<Attempt>;
   getAttemptsByEnrollment(enrollmentId: number): Promise<Attempt[]>;
   
+  // Certificate Template methods
+  createCertificateTemplate(template: InsertCertificateTemplate): Promise<CertificateTemplate>;
+  getCertificateTemplate(id: number): Promise<CertificateTemplate | undefined>;
+  getCertificateTemplates(): Promise<CertificateTemplate[]>;
+  getDefaultCertificateTemplate(): Promise<CertificateTemplate | undefined>;
+  updateCertificateTemplate(id: number, template: Partial<CertificateTemplate>): Promise<CertificateTemplate | undefined>;
+  
   // Certificate methods
   createCertificate(certificate: InsertCertificate): Promise<Certificate>;
   getCertificate(id: number): Promise<Certificate | undefined>;
@@ -67,7 +75,7 @@ export interface IStorage {
   getCertificateByEnrollment(enrollmentId: number): Promise<Certificate | undefined>;
   
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: any;
 }
 
 export class MemStorage implements IStorage {
@@ -78,8 +86,9 @@ export class MemStorage implements IStorage {
   private options: Map<number, Option>;
   private enrollments: Map<number, Enrollment>;
   private attempts: Map<number, Attempt>;
+  private certificateTemplates: Map<number, CertificateTemplate>;
   private certificates: Map<number, Certificate>;
-  sessionStore: session.SessionStore;
+  sessionStore: any;
   
   private currentIds: {
     users: number;
@@ -89,6 +98,7 @@ export class MemStorage implements IStorage {
     options: number;
     enrollments: number;
     attempts: number;
+    certificateTemplates: number;
     certificates: number;
   };
 
@@ -100,6 +110,7 @@ export class MemStorage implements IStorage {
     this.options = new Map();
     this.enrollments = new Map();
     this.attempts = new Map();
+    this.certificateTemplates = new Map();
     this.certificates = new Map();
     
     this.currentIds = {
@@ -110,6 +121,7 @@ export class MemStorage implements IStorage {
       options: 1,
       enrollments: 1,
       attempts: 1,
+      certificateTemplates: 1,
       certificates: 1
     };
     
@@ -125,6 +137,73 @@ export class MemStorage implements IStorage {
       email: "admin@examportal.com",
       name: "Super Admin",
       role: UserRole.SUPER_ADMIN
+    }).then(adminUser => {
+      // Create a default certificate template
+      this.createCertificateTemplate({
+        name: "Classic Certificate",
+        description: "Elegant certificate template with formal styling",
+        template: `
+          <div class="certificate" style="font-family: 'Times New Roman', serif; width: 800px; height: 600px; padding: 50px; text-align: center; border: 10px solid #1976D2; position: relative;">
+            <div style="width: 750px; height: 550px; padding: 20px; text-align: center; border: 5px solid #2196F3; background-color: white;">
+              <div style="text-align: center; margin-top: 20px;">
+                <span style="font-size: 50px; font-weight: bold; color: #0D47A1;">Certificate of Completion</span>
+              </div>
+              <div style="margin: 30px 0;">
+                <span style="font-size: 25px;"><i>This is to certify that</i></span>
+                <br><br>
+                <span style="font-size: 30px; font-weight: bold; color: #0D47A1;">{{studentName}}</span><br/><br/>
+                <span style="font-size: 25px;"><i>has successfully completed the</i></span> <br/><br/>
+                <span style="font-size: 30px; font-weight: bold; color: #0D47A1;">{{examTitle}}</span> <br/><br/>
+                <span style="font-size: 20px;">with a score of <b>{{score}}%</b></span> <br/><br/>
+                <span style="font-size: 20px;">Date: {{issueDate}}</span>
+              </div>
+              <div style="margin: 40px 0 0 0;">
+                <div style="width: 200px; float: left; margin-left: 50px; text-align: center;">
+                  <img src="{{academyLogo}}" alt="Academy Logo" style="width: 100px; height: auto;"><br>
+                  <span style="font-size: 16px;">{{academyName}}</span>
+                </div>
+                <div style="width: 200px; float: right; margin-right: 50px; text-align: center;">
+                  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAYAAADDhn8LAAAHaklEQVR4nO3df4xU5RXG8e+ZWXCNWVzEErMr27q0RauhQkSqJoYSKRGCpaSJgdhqqmkMmiImNmpImqY2/SOp/hE12pimNiF/YGysaQiYkkZtRBGElB9CdWWzCxoSjahZdllm3tM/ZmA3uzt3du69c+/s7vP5i3nPe++cOe/M3Hfm3jMQERERERERERERERERERERERERERERERERERERERERERERERERERGpjqS9A3Ewaw8wE5gBnAFMB84ApvXZ7DCwG9gN7HFuXS+19xPQFuAyYDpFjlLkMPsp8PbCH9J73xRnT+aCtAHtwAJgLjAL+Dzwuby7c8CHwA5gO/AOsK1jXddJv52tF2YtwOfIcCaDXMH5LEqXk0m9PsZBDvEee3mDHrsZmEnuA+dzY7qdw4PvF8vs7gq7f2VLa4HM2oBLgdnAJcAXgXOrdtuJJwN8ALwDvAXsAF7rWNd1pEr3XjVmCwL0xrm1wExm8BVm2Vdtllv0GqCXj3mLt3mLnewevP1jdnM3uzmT82wh9f3AH2A/hXXAemC9c0+Fjq7Ywl6/nDQVyOwi4AHgJxFGGMcTwL8a2jve3x1hvAGZ3RFgFaWaZfyI+TaPr8XQUxjkIH/lL2yz+yj037fcB8AFkCkA/wG2Ol8OsrK4FeQY8ESvN+fWtmJf8PpUzl7gJuAlbwNm0+L1x2w60MZZXMBsm0tTHAeLXsM8iVksZidytf0NeMa5RyOPVs5YLpA8vQZssLa2HWc1tHdsrmL8m4H/+jRo8bNxhpmA8/gW37EmlFNbptA5ux84l3Nd/bsNnuOajaeYdW227ZvP0NFWJHY1V+3YvDiucccdsxOAfYkLuIqbbR6nVtmyh5bV22Ib3azFuSdj6y+PmK7BeYZtxCQrEIC/M/SOb27qlgfogL9ltl9Cq80J1CtXcBVXVBiHvQis9hjRAPAcgFEA9gF/ce7JakVVLo5rcJ5hG+VYIOYepthfeQR+j+1G1oVxjQu59JXM85iTIHZDgO7ziX8cVgD+BLEXCJQtkVgXq8gUqFZi6yvZMXqGbVR7BY6/GjKHAs6MwPtfkuG3QLKBxtYFO+RaA+Yfhw2xFAiMWiIJKZCkxzWVPcM2UoGEZ9YeeJzgH/QbYR9EFoN0n0XwfdhPgXVOAhdIohRIKMZ8IP0FshP4B8GTDnrJ5m+uD9pBAgXyWeDtIANwIIm/IFMlKoNXAAVgHdnTnVjTQtUXpQkUyCzgk4DjLAcuTuh9r6a6FEjgxzRqjIaUvvQgkaWCu+RcsCi2fmLeZnQJFMhnA25vwF3AckLOIidQ7b9i5Eeg4pQrFBVI7I9pXvd24E6CB0k1R2ERbgL75R8lnLR9GFjh3CuJjZ8jFUiNcDLAGmBhAqcCJ5d9+XuBdxN4GnAMeBZY5dyjCfRfNRWpBhUoR7LX9mQZq1OXO4A7o55V7lfsj4T9J0GxvQosA9aOZOvbOKjYx9rLRmAL2eWfcMreKvdzngF8CdTB8i4yPAbcBbzs3LqUx/aW5ANcG9xDdkOWVYk+wmYJHuGkkWcZa6e2kfcC2OTcEymN7E8KKyQj+Z9sAfLF8d2Ux042EYC/5f7+NnCBc+tSGrMiVWkBLNVJT2OoFNIw4vcMW2+tVCCjyHrBHqKawJ8CX+1Y13Uk7cFEvQbneU8YpWdzJlAaX69lV8UqrKJ4DYEW1aZG1Ws4dTuuqVfxjDvuLFvGHCBTAA6QPZPwTsf6RnXEHIRZIrMfB3v0mT3ANfVyCxIzxWoqpDQJpAIJIc+X3w+JOMRJ4HngOmBdPdyCBGSQXQW7J9j2xpJAAxdTXapYQZj9OXDrgxx4a1/fT93OYg1EsxNDw48QfItE/Eu7QKLOBSj20Uu8lXQAaQpQIBa8QMrMdxpwq0STVsWKerxCr5Y1Eq2QpTURSvk9SLqnTSLVowoVREonPeVSJBrVq6Cizkeon+UEqSfJTHqKo+LE/B44vIZ3Rlxn78a4g6YKaQKVjsrqXqnYR+PzMb02aOKPRInaEQXge0HG0OyxNFKFCqh3ByWzKPQOdMHuQ+2LgnRQRz6JcVsbFWs6BRWIQUMVXsipP1EnRVd2/mT3uoYpjP6fLZE6HLOgdSpAHvkMkhIJ1F8Zfxgpj2vVkqhSwz+a9hZIE34gjcUsSCmXK5qEiyTlMavE4hk2TQUSgNnpwCVBu0/5GKKSHP+yWfHQyHtfY95mcZprKZBgrgBODdx7ej96G0SZSWWgv2kBsjMO9JgmLlGqWAHMDjFCimcHcRgw5clQrVRZKu4n8+Mu8zZLfFwDFUhQhbRHDy1MP62ypzCDTsYeap5TyGmrpx8Rkk8qkECMw6GPwQZMIlT36Y9ZCDm2MWfqI7yfzMfCR3UrkMAmAa2he8/gR4MaTjVvPZLdLrPx+fE21eDj5hkW1a1q0TJJiJJeJiDtHcjHODy5aMJPdBpDwlsfJbZ/mTf4V41irr+pWKGsAFYG35mxuKpjPEL3yGupuHwrfvpYZXwSS+fhtvGXvXd5vJ+JiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIhU6v9sAbCx2vETswAAAABJRU5ErkJggg==" alt="Signature" style="width: 150px; height: auto;"><br>
+                  <span style="font-size: 16px;">Authorized Signature</span>
+                </div>
+              </div>
+              <div style="clear: both; margin-top: 30px; text-align: center;">
+                <span style="font-size: 14px;">Certificate ID: {{certificateNumber}}</span>
+              </div>
+            </div>
+          </div>
+        `,
+        createdBy: adminUser.id,
+        isDefault: true,
+        status: "ACTIVE"
+      });
+      
+      // Create a modern template
+      this.createCertificateTemplate({
+        name: "Modern Certificate",
+        description: "Clean, modern design with minimalist styling",
+        template: `
+          <div class="certificate" style="width: 800px; height: 600px; border: 10px solid #1976D2; padding: 20px; text-align: center; font-family: Arial, sans-serif;">
+            <div style="font-size: 24px; font-weight: bold; color: #1976D2; margin-top: 50px;">CERTIFICATE OF COMPLETION</div>
+            <div style="font-size: 16px; margin: 20px 0;">This is to certify that</div>
+            <div style="font-size: 30px; font-weight: bold; margin: 20px 0; color: #333;">{{studentName}}</div>
+            <div style="font-size: 16px; margin: 20px 0;">has successfully completed the</div>
+            <div style="font-size: 24px; font-weight: bold; margin: 20px 0; color: #333;">{{examTitle}}</div>
+            <div style="font-size: 16px; margin: 20px 0;">with a score of</div>
+            <div style="font-size: 22px; font-weight: bold; margin: 20px 0; color: #333;">{{score}}%</div>
+            <div style="font-size: 16px; margin: 20px 0;">Date: {{issueDate}}</div>
+            <div style="font-size: 16px; margin: 20px 0;">Certificate ID: {{certificateNumber}}</div>
+            <div style="font-size: 16px; margin: 30px 0;">
+              <div style="display: inline-block; border-top: 1px solid #000; padding-top: 5px; margin: 0 20px;">
+                <div>{{academyName}}</div>
+              </div>
+            </div>
+          </div>
+        `,
+        createdBy: adminUser.id,
+        isDefault: false,
+        status: "ACTIVE"
+      });
     });
   }
 
@@ -148,7 +227,14 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentIds.users++;
     const now = new Date();
-    const user: User = { ...insertUser, id, createdAt: now };
+    // Ensure role is set
+    const role = insertUser.role || UserRole.STUDENT;
+    const user: User = { 
+      ...insertUser, 
+      role,
+      id, 
+      createdAt: now 
+    };
     this.users.set(id, user);
     return user;
   }
@@ -166,7 +252,18 @@ export class MemStorage implements IStorage {
   async createAcademy(insertAcademy: InsertAcademy): Promise<Academy> {
     const id = this.currentIds.academies++;
     const now = new Date();
-    const academy: Academy = { ...insertAcademy, id, createdAt: now };
+    const status = insertAcademy.status || "ACTIVE";
+    const description = insertAcademy.description || null;
+    const logo = insertAcademy.logo || null;
+    
+    const academy: Academy = { 
+      ...insertAcademy, 
+      id, 
+      createdAt: now,
+      status,
+      description,
+      logo
+    };
     this.academies.set(id, academy);
     return academy;
   }
@@ -360,6 +457,75 @@ export class MemStorage implements IStorage {
     return Array.from(this.certificates.values()).find(
       (certificate) => certificate.enrollmentId === enrollmentId
     );
+  }
+
+  // Certificate Template methods
+  async createCertificateTemplate(insertTemplate: InsertCertificateTemplate): Promise<CertificateTemplate> {
+    const id = this.currentIds.certificateTemplates++;
+    const now = new Date();
+    
+    // Ensure required fields have values
+    const status = insertTemplate.status || "ACTIVE";
+    const description = insertTemplate.description || null;
+    const isDefault = insertTemplate.isDefault !== undefined ? insertTemplate.isDefault : false;
+    
+    const template: CertificateTemplate = { 
+      ...insertTemplate, 
+      id, 
+      createdAt: now,
+      status,
+      description,
+      isDefault
+    };
+    this.certificateTemplates.set(id, template);
+    
+    // If marked as default, update all other templates to non-default
+    if (template.isDefault) {
+      // Convert entries to array before iteration to avoid downlevelIteration issues
+      const entries = Array.from(this.certificateTemplates.entries());
+      for (const [tid, t] of entries) {
+        if (tid !== id && t.isDefault) {
+          this.certificateTemplates.set(tid, { ...t, isDefault: false });
+        }
+      }
+    }
+    
+    return template;
+  }
+  
+  async getCertificateTemplate(id: number): Promise<CertificateTemplate | undefined> {
+    return this.certificateTemplates.get(id);
+  }
+  
+  async getCertificateTemplates(): Promise<CertificateTemplate[]> {
+    return Array.from(this.certificateTemplates.values());
+  }
+  
+  async getDefaultCertificateTemplate(): Promise<CertificateTemplate | undefined> {
+    return Array.from(this.certificateTemplates.values()).find(
+      (template) => template.isDefault
+    );
+  }
+  
+  async updateCertificateTemplate(id: number, templateData: Partial<CertificateTemplate>): Promise<CertificateTemplate | undefined> {
+    const template = this.certificateTemplates.get(id);
+    if (!template) return undefined;
+    
+    const updatedTemplate = { ...template, ...templateData };
+    this.certificateTemplates.set(id, updatedTemplate);
+    
+    // If marked as default, update all other templates to non-default
+    if (updatedTemplate.isDefault) {
+      // Convert entries to array before iteration to avoid downlevelIteration issues
+      const entries = Array.from(this.certificateTemplates.entries());
+      for (const [tid, t] of entries) {
+        if (tid !== id && t.isDefault) {
+          this.certificateTemplates.set(tid, { ...t, isDefault: false });
+        }
+      }
+    }
+    
+    return updatedTemplate;
   }
 }
 

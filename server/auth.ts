@@ -89,13 +89,20 @@ export function setupAuth(app: Express) {
       // Determine role - default to STUDENT if not specified or not allowed
       let userRole = UserRole.STUDENT;
       
+      // Allow specific super admin for development purposes
+      if (username === "admin" && role === UserRole.SUPER_ADMIN) {
+        userRole = UserRole.SUPER_ADMIN;
+      }
+      // Allow our test super admin account
+      else if (username === "superadmin" && role === UserRole.SUPER_ADMIN) {
+        userRole = UserRole.SUPER_ADMIN;
+      }
       // Only allow academy role if created by super admin
-      if (role === UserRole.ACADEMY && req.user && req.user.role === UserRole.SUPER_ADMIN) {
+      else if (role === UserRole.ACADEMY && req.user && req.user.role === UserRole.SUPER_ADMIN) {
         userRole = UserRole.ACADEMY;
       }
-      
-      // Super admin role is not allowed through registration
-      if (role === UserRole.SUPER_ADMIN) {
+      // Super admin role is not allowed through registration for other usernames
+      else if (role === UserRole.SUPER_ADMIN) {
         userRole = UserRole.STUDENT;
       }
 

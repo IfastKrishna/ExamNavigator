@@ -495,12 +495,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (passed) {
         const certificateNumber = `EP-${new Date().getFullYear()}-${nanoid(8)}`;
         
+        // Get exam's certificate template or the default template
+        let templateId = null;
+        
+        if (exam.certificateTemplateId) {
+          // Use the exam's specified template
+          templateId = exam.certificateTemplateId;
+        } else {
+          // Use the default template
+          const defaultTemplate = await storage.getDefaultCertificateTemplate();
+          if (defaultTemplate) {
+            templateId = defaultTemplate.id;
+          }
+        }
+        
         const certificate = await storage.createCertificate({
           enrollmentId,
           studentId: req.user.id,
           examId: enrollment.examId,
           academyId: exam.academyId,
-          certificateNumber
+          templateId,
+          certificateNumber,
+          customizations: null
         });
         
         // Update enrollment with certificate ID
@@ -577,6 +593,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     res.json(certificate);
+  });
+  
+  // Certificate Templates
+  app.get("/api/certificate-templates", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    // Only super admins and academies can access certificate templates
+    if (req.user.role === UserRole.STUDENT) {
+      return res.sendStatus(403);
+    }
+    
+    // Check if default template is requested
+    if (req.query.default === 'true') {
+      const defaultTemplate = await storage.getDefaultCertificateTemplate();
+      
+      if (!defaultTemplate) {
+        return res.status(404).json({ message: "No default certificate template found" });
+      }
+      
+      return res.json(defaultTemplate);
+    }
+    
+    const templates = await storage.getCertificateTemplates();
+    res.json(templates);
+  });
+  
+  app.get("/api/certificate-templates/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    // Only super admins and academies can access certificate templates
+    if (req.user.role === UserRole.STUDENT) {
+      return res.sendStatus(403);
+    }
+    
+    const templateId = parseInt(req.params.id);
+    const template = await storage.getCertificateTemplate(templateId);
+    
+    if (!template) {
+      return res.status(404).json({ message: "Certificate template not found" });
+    }
+    
+    res.json(template);
+  });
+  
+  app.post("/api/certificate-templates", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.SUPER_ADMIN) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const templateData = {
+        ...req.body,
+        createdBy: req.user.id
+      };
+      
+      const template = await storage.createCertificateTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid template data" });
+    }
+  });
+  
+  app.put("/api/certificate-templates/:id", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.SUPER_ADMIN) {
+      return res.sendStatus(403);
+    }
+    
+    const templateId = parseInt(req.params.id);
+    const template = await storage.getCertificateTemplate(templateId);
+    
+    if (!template) {
+      return res.status(404).json({ message: "Certificate template not found" });
+    }
+    
+    try {
+      const updatedTemplate = await storage.updateCertificateTemplate(templateId, req.body);
+      res.json(updatedTemplate);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid template data" });
+    }
   });
 
   const httpServer = createServer(app);
