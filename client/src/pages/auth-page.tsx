@@ -230,6 +230,7 @@ export default function AuthPage() {
                               >
                                 <option value={UserRole.STUDENT}>Student</option>
                                 <option value={UserRole.ACADEMY}>Academy</option>
+                                <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
                               </select>
                             </FormControl>
                             <FormMessage />

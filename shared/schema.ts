@@ -77,6 +77,7 @@ export const enrollments = pgTable("enrollments", {
   completedAt: timestamp("completed_at"),
   score: doublePrecision("score"),
   certificateId: text("certificate_id"),
+  isAssigned: boolean("is_assigned").default(false), // Flag for students assigned by academies
   createdAt: timestamp("created_at").defaultNow()
 });
 
@@ -150,7 +151,8 @@ export const insertOptionSchema = createInsertSchema(options).pick({
 export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({
   studentId: true,
   examId: true,
-  status: true
+  status: true,
+  isAssigned: true
 });
 
 export const insertAttemptSchema = createInsertSchema(attempts).pick({

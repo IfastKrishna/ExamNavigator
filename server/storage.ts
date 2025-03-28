@@ -55,6 +55,7 @@ export interface IStorage {
   getEnrollmentsByStudent(studentId: number): Promise<Enrollment[]>;
   getEnrollmentsByExam(examId: number): Promise<Enrollment[]>;
   updateEnrollment(id: number, enrollment: Partial<Enrollment>): Promise<Enrollment | undefined>;
+  deleteEnrollment(id: number): Promise<void>;
   
   // Attempt methods
   createAttempt(attempt: InsertAttempt): Promise<Attempt>;
@@ -377,7 +378,8 @@ export class MemStorage implements IStorage {
       startedAt: null,
       completedAt: null,
       score: null,
-      certificateId: null
+      certificateId: null,
+      isAssigned: insertEnrollment.isAssigned ?? false
     };
     this.enrollments.set(id, enrollment);
     return enrollment;
@@ -406,6 +408,10 @@ export class MemStorage implements IStorage {
     const updatedEnrollment = { ...enrollment, ...enrollmentData };
     this.enrollments.set(id, updatedEnrollment);
     return updatedEnrollment;
+  }
+  
+  async deleteEnrollment(id: number): Promise<void> {
+    this.enrollments.delete(id);
   }
   
   // Attempt methods

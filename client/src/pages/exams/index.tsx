@@ -25,6 +25,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Loader2, Plus, Eye, Edit, MoreHorizontal, Play, BookOpen } from "lucide-react";
+import AssignStudentsDialog from "@/components/exams/assign-students-dialog";
 import { formatCurrency } from "@/lib/utils";
 
 export default function ExamsPage() {
@@ -130,8 +131,8 @@ export default function ExamsPage() {
     return examsWithAcademyNames;
   };
 
-  // Determine if user can create exams (academy users only)
-  const canCreateExam = user?.role === UserRole.ACADEMY;
+  // Determine if user can create exams (academy and super admin users only)
+  const canCreateExam = user?.role === UserRole.ACADEMY || user?.role === UserRole.SUPER_ADMIN;
   
   // Determine if user can enroll in exams (student users only)
   const canEnrollInExam = user?.role === UserRole.STUDENT;
@@ -330,10 +331,17 @@ export default function ExamsPage() {
                                   View
                                 </DropdownMenuItem>
                                 {user?.role === UserRole.ACADEMY && (
-                                  <DropdownMenuItem onClick={() => setLocation(`/exams/${exam.id}/edit`)}>
-                                    <Edit className="h-4 w-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
+                                  <>
+                                    <DropdownMenuItem onClick={() => setLocation(`/exams/${exam.id}/edit`)}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
+                                      <div>
+                                        <AssignStudentsDialog examId={exam.id} examTitle={exam.title} />
+                                      </div>
+                                    </DropdownMenuItem>
+                                  </>
                                 )}
                               </DropdownMenuContent>
                             </DropdownMenu>

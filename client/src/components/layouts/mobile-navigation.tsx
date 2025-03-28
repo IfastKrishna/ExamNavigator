@@ -70,8 +70,8 @@ export default function MobileNavigation({ userRole }: MobileNavigationProps) {
             <a className={cn(
               "flex flex-col items-center justify-center",
               location === item.href
-                ? "text-primary dark:text-accent"
-                : "text-gray-600 dark:text-gray-400"
+                ? "text-primary dark:text-primary font-medium"
+                : "text-gray-600 dark:text-gray-300"
             )}>
               {item.icon}
               <span className="text-xs mt-1">{item.name}</span>
@@ -81,7 +81,7 @@ export default function MobileNavigation({ userRole }: MobileNavigationProps) {
         
         {/* More menu button */}
         <Link href="/more">
-          <a className="flex flex-col items-center justify-center text-gray-600 dark:text-gray-400">
+          <a className="flex flex-col items-center justify-center text-gray-600 dark:text-gray-300">
             <MoreHorizontal className="h-5 w-5" />
             <span className="text-xs mt-1">More</span>
           </a>

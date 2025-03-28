@@ -11,6 +11,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // API Routes
   
+  // Users
+  app.get("/api/users/role/:role", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    
+    const role = req.params.role as UserRole;
+    
+    // Validate that role is a valid UserRole
+    if (!Object.values(UserRole).includes(role)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+    
+    // For security, only SUPER_ADMIN and ACADEMY roles can list users
+    if (req.user.role !== UserRole.SUPER_ADMIN && req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const users = await storage.getUsersByRole(role);
+      
+      // For ACADEMY users, restrict access to only students
+      if (req.user.role === UserRole.ACADEMY && role !== UserRole.STUDENT) {
+        return res.sendStatus(403);
+      }
+      
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching users" });
+    }
+  });
+  
   // Academies
   app.get("/api/academies", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -331,38 +363,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(enrollments);
   });
   
-  app.post("/api/enrollments", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== UserRole.STUDENT) {
+  // Get enrollments for a specific exam
+  app.get("/api/exams/:examId/enrollments", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    const examId = parseInt(req.params.examId);
+    const exam = await storage.getExam(examId);
+    
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+    
+    // Verify permissions
+    if (req.user.role === UserRole.ACADEMY) {
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy || academy.id !== exam.academyId) {
+        return res.sendStatus(403);
+      }
+    } else if (req.user.role !== UserRole.SUPER_ADMIN) {
       return res.sendStatus(403);
     }
     
+    // Get enrollments for this exam
+    const enrollments = await storage.getEnrollmentsByExam(examId);
+    
+    // Get student details for each enrollment
+    const enrollmentsWithStudents = await Promise.all(
+      enrollments.map(async (enrollment) => {
+        const student = await storage.getUser(enrollment.studentId);
+        return {
+          ...enrollment,
+          student: student ? {
+            id: student.id,
+            username: student.username,
+            name: student.name,
+            email: student.email,
+            role: student.role
+          } : null
+        };
+      })
+    );
+    
+    res.json(enrollmentsWithStudents);
+  });
+  
+  app.post("/api/enrollments", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    
     try {
-      const { examId } = req.body;
+      const { examId, studentId, isAssigned } = req.body;
       
       const exam = await storage.getExam(examId);
       if (!exam) {
         return res.status(404).json({ message: "Exam not found" });
       }
       
-      if (exam.status !== "PUBLISHED") {
-        return res.status(400).json({ message: "Cannot enroll in an unpublished exam" });
+      // Case 1: Student self-enrolling
+      if (req.user.role === UserRole.STUDENT) {
+        if (exam.status !== "PUBLISHED") {
+          return res.status(400).json({ message: "Cannot enroll in an unpublished exam" });
+        }
+        
+        // Check for existing enrollment
+        const existingEnrollments = await storage.getEnrollmentsByStudent(req.user.id);
+        const alreadyEnrolled = existingEnrollments.find(e => e.examId === examId);
+        
+        if (alreadyEnrolled) {
+          return res.status(400).json({ message: "Already enrolled in this exam" });
+        }
+        
+        const enrollment = await storage.createEnrollment({
+          studentId: req.user.id,
+          examId,
+          status: "PURCHASED"
+        });
+        
+        res.status(201).json(enrollment);
+      } 
+      // Case 2: Academy or Super Admin assigning a student to an exam
+      else if ((req.user.role === UserRole.ACADEMY || req.user.role === UserRole.SUPER_ADMIN) && studentId) {
+        // For academies, check they own the exam
+        if (req.user.role === UserRole.ACADEMY) {
+          const academy = await storage.getAcademyByUserId(req.user.id);
+          if (!academy || academy.id !== exam.academyId) {
+            return res.sendStatus(403);
+          }
+        }
+        
+        // Check for existing enrollment
+        const existingEnrollments = await storage.getEnrollmentsByStudent(studentId);
+        const alreadyEnrolled = existingEnrollments.find(e => e.examId === examId);
+        
+        if (alreadyEnrolled) {
+          return res.status(400).json({ message: "Student already enrolled in this exam" });
+        }
+        
+        // Verify student exists
+        const student = await storage.getUser(studentId);
+        if (!student || student.role !== UserRole.STUDENT) {
+          return res.status(404).json({ message: "Student not found" });
+        }
+        
+        const enrollment = await storage.createEnrollment({
+          studentId,
+          examId,
+          status: "PURCHASED",
+          isAssigned: true
+        });
+        
+        res.status(201).json(enrollment);
+      } else {
+        return res.status(403).json({ message: "Not authorized to perform this action" });
       }
       
-      // Check for existing enrollment
-      const existingEnrollments = await storage.getEnrollmentsByStudent(req.user.id);
-      const alreadyEnrolled = existingEnrollments.find(e => e.examId === examId);
-      
-      if (alreadyEnrolled) {
-        return res.status(400).json({ message: "Already enrolled in this exam" });
-      }
-      
-      const enrollment = await storage.createEnrollment({
-        studentId: req.user.id,
-        examId,
-        status: "PURCHASED"
-      });
-      
-      res.status(201).json(enrollment);
     } catch (error) {
       res.status(400).json({ message: "Invalid enrollment data" });
     }
@@ -396,6 +511,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(updatedEnrollment);
   });
   
+  // Delete enrollment (unenroll student)
+  app.delete("/api/enrollments/:id", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    
+    const enrollmentId = parseInt(req.params.id);
+    const enrollment = await storage.getEnrollment(enrollmentId);
+    
+    if (!enrollment) {
+      return res.status(404).json({ message: "Enrollment not found" });
+    }
+    
+    // Only allow removing enrollments that haven't been started
+    if (enrollment.status !== "PURCHASED") {
+      return res.status(400).json({ message: "Cannot remove enrollment once exam has been started or completed" });
+    }
+    
+    // Check permissions
+    if (req.user.role === UserRole.STUDENT) {
+      // Students can only remove their own enrollments
+      if (enrollment.studentId !== req.user.id) {
+        return res.sendStatus(403);
+      }
+    } else if (req.user.role === UserRole.ACADEMY) {
+      // Academy users can only remove enrollments for their exams
+      const exam = await storage.getExam(enrollment.examId);
+      if (!exam) {
+        return res.status(404).json({ message: "Exam not found" });
+      }
+      
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy || academy.id !== exam.academyId) {
+        return res.sendStatus(403);
+      }
+    } else if (req.user.role !== UserRole.SUPER_ADMIN) {
+      return res.sendStatus(403);
+    }
+    
+    // Delete enrollment
+    await storage.deleteEnrollment(enrollmentId);
+    
+    res.status(200).json({ message: "Enrollment removed successfully" });
+  });
+
   app.post("/api/enrollments/:id/submit", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== UserRole.STUDENT) {
       return res.sendStatus(403);
