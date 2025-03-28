@@ -164,6 +164,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(exams);
   });
   
+  // Endpoint for academies to view available exams to purchase
+  app.get("/api/available-exams", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const currentAcademy = await storage.getAcademyByUserId(req.user.id);
+      if (!currentAcademy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      
+      // Get all academies (to find all possible exams)
+      const allAcademies = await storage.getAcademies();
+      let availableExams = [];
+      
+      for (const academy of allAcademies) {
+        // Skip the current academy's exams (they already own them)
+        if (academy.id === currentAcademy.id) continue;
+        
+        // Get exams from this academy and filter to show only published exams
+        const academyExams = await storage.getExamsByAcademy(academy.id);
+        const publishedExams = academyExams.filter(exam => 
+          exam.status === "PUBLISHED" && exam.price && exam.price > 0
+        );
+        
+        if (publishedExams.length > 0) {
+          // Add academy information
+          const examsWithAcademyInfo = publishedExams.map(exam => ({
+            ...exam,
+            academyName: academy.name,
+            academyLogo: academy.logo
+          }));
+          
+          availableExams.push(...examsWithAcademyInfo);
+        }
+      }
+      
+      res.json(availableExams);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching available exams" });
+    }
+  });
+  
+  // Endpoint for academies to purchase an exam
+  app.post("/api/exams/purchase", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const { examId } = req.body;
+      if (!examId) {
+        return res.status(400).json({ message: "Exam ID is required" });
+      }
+      
+      // Get the exam to purchase
+      const examToPurchase = await storage.getExam(examId);
+      if (!examToPurchase) {
+        return res.status(404).json({ message: "Exam not found" });
+      }
+      
+      // Check if exam is published and has a price
+      if (examToPurchase.status !== "PUBLISHED" || !examToPurchase.price) {
+        return res.status(400).json({ message: "Exam is not available for purchase" });
+      }
+      
+      // Get the current academy
+      const buyerAcademy = await storage.getAcademyByUserId(req.user.id);
+      if (!buyerAcademy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      
+      // Check if academy already owns this exam
+      const academyExams = await storage.getExamsByAcademy(buyerAcademy.id);
+      const alreadyOwns = academyExams.some(exam => 
+        exam.title === examToPurchase.title && 
+        exam.description === examToPurchase.description
+      );
+      
+      if (alreadyOwns) {
+        return res.status(400).json({ message: "Academy already owns this exam" });
+      }
+      
+      // Create a copy of the exam for this academy
+      const newExam = await storage.createExam({
+        title: examToPurchase.title,
+        description: examToPurchase.description,
+        duration: examToPurchase.duration,
+        academyId: buyerAcademy.id,
+        passingScore: examToPurchase.passingScore,
+        status: "DRAFT", // Set as draft until the academy publishes it
+        price: 0, // Reset price for the academy's copy
+        examDate: examToPurchase.examDate,
+        examTime: examToPurchase.examTime,
+        certificateTemplateId: examToPurchase.certificateTemplateId,
+        manualReview: examToPurchase.manualReview
+      });
+      
+      // Copy all questions and options
+      const originalQuestions = await storage.getQuestionsByExam(examToPurchase.id);
+      
+      for (const originalQuestion of originalQuestions) {
+        // Create the question
+        const newQuestion = await storage.createQuestion({
+          examId: newExam.id,
+          text: originalQuestion.text,
+          type: originalQuestion.type,
+          points: originalQuestion.points
+        });
+        
+        // Get and copy the options
+        const originalOptions = await storage.getOptionsByQuestion(originalQuestion.id);
+        for (const originalOption of originalOptions) {
+          await storage.createOption({
+            questionId: newQuestion.id,
+            text: originalOption.text,
+            isCorrect: originalOption.isCorrect
+          });
+        }
+      }
+      
+      res.status(201).json({ 
+        message: "Exam purchased successfully", 
+        exam: newExam 
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Error purchasing exam" });
+    }
+  });
+  
   app.get("/api/exams/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
@@ -206,6 +337,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const academy = await storage.getAcademy(academyId);
       if (!academy) {
         return res.status(404).json({ message: "Academy not found" });
+      }
+      
+      // Make sure price is specified for the exam
+      if (req.body.price === undefined || req.body.price === null) {
+        return res.status(400).json({ message: "Exam price is required" });
       }
       
       const examData = {

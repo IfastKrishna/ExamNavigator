@@ -139,6 +139,24 @@ export class MemStorage implements IStorage {
       name: "Super Admin",
       role: UserRole.SUPER_ADMIN
     }).then(adminUser => {
+      
+      // Create a preset Academy account for direct login
+      this.createUser({
+        username: "academy",
+        password: "70c9d83b95543315edd30b5157e75e5b2afe3c72c85e0d0a3341cd14ce2a60ce8d05225afa34b2d4f43c21bd64f03deade4d97b4daa8b168a367faa0af9d667e.41f93f2d87f62d60d5b70e91a7511f61", // "admin123"
+        email: "academy@examportal.com",
+        name: "Demo Academy",
+        role: UserRole.ACADEMY
+      }).then(academyUser => {
+        // Create the academy record for this user
+        this.createAcademy({
+          userId: academyUser.id,
+          name: "Demo Academy",
+          description: "A demo academy for testing purposes",
+          logo: "https://via.placeholder.com/150",
+          status: "ACTIVE"
+        });
+      });
       // Create a default certificate template
       this.createCertificateTemplate({
         name: "Classic Certificate",
