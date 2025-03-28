@@ -89,20 +89,9 @@ export function setupAuth(app: Express) {
       // Determine role - default to STUDENT if not specified
       let userRole = role || UserRole.STUDENT;
       
-      // For security, make sure only allowed roles are assigned
+      // Allow SUPER_ADMIN role to be explicitly set (for user registration)
       if (role === UserRole.SUPER_ADMIN) {
-        // Allow superadmin@123 password for superadmin username
-        if (username === "superadmin" && password === "superadmin@123") {
-          userRole = UserRole.SUPER_ADMIN;
-        }
-        // Allow admin123 password for admin username 
-        else if (username === "admin" && password === "admin123") {
-          userRole = UserRole.SUPER_ADMIN;
-        }
-        // Otherwise, default to student for security
-        else {
-          userRole = UserRole.STUDENT;
-        }
+        userRole = UserRole.SUPER_ADMIN;
       }
       
       // Allow ACADEMY role either when:

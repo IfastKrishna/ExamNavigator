@@ -30,7 +30,7 @@ const registerSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
-  role: z.enum([UserRole.STUDENT, UserRole.ACADEMY]), // SUPER_ADMIN not allowed for registration
+  role: z.enum([UserRole.STUDENT, UserRole.ACADEMY, UserRole.SUPER_ADMIN]), // Allow SUPER_ADMIN for registration
 });
 
 export default function AuthPage() {
