@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { UserRole, type Exam, type Academy, type Question, type Option } from "@shared/schema";
@@ -7,8 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Edit, Clock, Award, Users, DollarSign, CheckCircle } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { Loader2, ArrowLeft, Edit, Clock, Award, Users, DollarSign, CheckCircle, Eye, FileText } from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface ExamViewProps {
   examId: number;
@@ -17,7 +21,9 @@ interface ExamViewProps {
 export default function ExamView({ examId }: ExamViewProps) {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Fetch the exam details
   const { data: exam, isLoading: isLoadingExam } = useQuery<Exam>({
@@ -36,7 +42,41 @@ export default function ExamView({ examId }: ExamViewProps) {
     enabled: !!exam && (user?.role === UserRole.ACADEMY || user?.role === UserRole.SUPER_ADMIN),
   });
 
-  if (isLoadingExam || isLoadingAcademy || isLoadingQuestions) {
+  // Fetch enrollments (for academy)
+  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useQuery<any[]>({
+    queryKey: ["/api/exams", examId, "enrollments"],
+    enabled: !!exam && (user?.role === UserRole.ACADEMY || user?.role === UserRole.SUPER_ADMIN),
+  });
+
+  // Enroll in exam mutation (for students)
+  const enrollMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/enrollments", {
+        examId,
+        studentId: user?.id,
+        isAssigned: false,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enrollments"] });
+      toast({
+        title: "Success",
+        description: "You have successfully enrolled in this exam",
+      });
+      // Navigate to exams page
+      setLocation("/exams");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to enroll in exam",
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (isLoadingExam || isLoadingAcademy || isLoadingQuestions || isLoadingEnrollments) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
@@ -62,6 +102,11 @@ export default function ExamView({ examId }: ExamViewProps) {
 
   // Determine if user can edit the exam
   const canEdit = user?.role === UserRole.ACADEMY && academy?.userId === user.id;
+  
+  // Calculate student enrollment and pass rate metrics
+  const studentCount = enrollments.length || 0;
+  const passedCount = enrollments.filter(e => e.status === "PASSED").length || 0;
+  const passRate = studentCount > 0 ? Math.round((passedCount / studentCount) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -79,9 +124,11 @@ export default function ExamView({ examId }: ExamViewProps) {
                 <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                   <Clock className="h-4 w-4 mr-1" /> {exam.duration} minutes
                 </span>
-                <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                  <DollarSign className="h-4 w-4 mr-1" /> {formatCurrency(exam.price)}
-                </span>
+                {exam.price > 0 && (
+                  <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                    <DollarSign className="h-4 w-4 mr-1" /> {formatCurrency(exam.price)}
+                  </span>
+                )}
               </div>
             </CardDescription>
           </div>
@@ -90,6 +137,12 @@ export default function ExamView({ examId }: ExamViewProps) {
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
+            {(user?.role === UserRole.ACADEMY || user?.role === UserRole.SUPER_ADMIN) && (
+              <Button variant="outline" onClick={() => setPreviewOpen(true)}>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview Exam
+              </Button>
+            )}
             {canEdit && (
               <Button onClick={() => setLocation(`/exams/${examId}/edit`)}>
                 <Edit className="mr-2 h-4 w-4" />
@@ -153,31 +206,50 @@ export default function ExamView({ examId }: ExamViewProps) {
                     <Users className="h-10 w-10 p-2 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-400 mr-3" />
                     <div>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Students Enrolled</p>
-                      <p className="font-semibold">78</p> {/* This would come from actual data */}
+                      <p className="font-semibold">{studentCount}</p>
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
-              {user?.role === UserRole.ACADEMY && (
+              {(user?.role === UserRole.ACADEMY || user?.role === UserRole.SUPER_ADMIN) && studentCount > 0 && (
                 <div>
                   <h3 className="font-medium mb-2">Performance</h3>
                   <div className="flex items-center">
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mr-2">
                       <div 
                         className="bg-green-500 h-2.5 rounded-full" 
-                        style={{ width: '85%' }} /* This would be actual data */
+                        style={{ width: `${passRate}%` }}
                       ></div>
                     </div>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">85% Pass Rate</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">{passRate}% Pass Rate</span>
+                  </div>
+                </div>
+              )}
+
+              {exam.examDate && (
+                <div>
+                  <h3 className="font-medium mb-2">Scheduled Date</h3>
+                  <div className="flex items-center">
+                    <Badge variant="outline" className="text-sm">
+                      {formatDate(exam.examDate)} {exam.examTime ? exam.examTime : ""}
+                    </Badge>
                   </div>
                 </div>
               )}
             </CardContent>
             <CardFooter className="border-t pt-6">
               {user?.role === UserRole.STUDENT && (
-                <Button className="ml-auto">
-                  <CheckCircle className="mr-2 h-4 w-4" />
+                <Button 
+                  className="ml-auto"
+                  onClick={() => enrollMutation.mutate()}
+                  disabled={enrollMutation.isPending}
+                >
+                  {enrollMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                  )}
                   Enroll in Exam
                 </Button>
               )}
@@ -257,18 +329,86 @@ export default function ExamView({ examId }: ExamViewProps) {
         {/* Students Tab - Only visible to academy and super admin */}
         <TabsContent value="students">
           <Card>
-            <CardHeader>
-              <CardTitle>Enrolled Students</CardTitle>
-              <CardDescription>
-                Students who have enrolled in this exam.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Enrolled Students ({enrollments.length})</CardTitle>
+                <CardDescription>
+                  Students who have enrolled in this exam.
+                </CardDescription>
+              </div>
+              {user?.role === UserRole.ACADEMY && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setLocation(`/exams/${examId}/assign`)}
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Assign Students
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
-                <p className="text-gray-500 dark:text-gray-400">
-                  Student enrollment data would be displayed here.
-                </p>
-              </div>
+              {enrollments.length === 0 ? (
+                <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No students are currently enrolled in this exam.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2 font-medium">Student</th>
+                        <th className="text-left p-2 font-medium">Status</th>
+                        <th className="text-left p-2 font-medium">Score</th>
+                        <th className="text-left p-2 font-medium">Assigned</th>
+                        <th className="text-left p-2 font-medium">Certificate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {enrollments.map((enrollment) => (
+                        <tr key={enrollment.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <td className="p-2">
+                            <div>
+                              <div className="font-medium">{enrollment.student?.name || "Unknown"}</div>
+                              <div className="text-sm text-gray-500">{enrollment.student?.email}</div>
+                            </div>
+                          </td>
+                          <td className="p-2">
+                            <Badge variant={
+                              enrollment.status === "PASSED" ? "success" : 
+                              enrollment.status === "FAILED" ? "destructive" :
+                              enrollment.status === "STARTED" ? "warning" : 
+                              "secondary"
+                            }>
+                              {enrollment.status}
+                            </Badge>
+                          </td>
+                          <td className="p-2">
+                            {enrollment.score !== null ? `${enrollment.score}%` : "—"}
+                          </td>
+                          <td className="p-2">
+                            {enrollment.isAssigned ? "Yes" : "No"}
+                          </td>
+                          <td className="p-2">
+                            {enrollment.certificateId ? (
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => setLocation(`/certificates/${enrollment.certificateId}`)}
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                View
+                              </Button>
+                            ) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -283,15 +423,155 @@ export default function ExamView({ examId }: ExamViewProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
-                <p className="text-gray-500 dark:text-gray-400">
-                  Exam performance analytics would be displayed here.
-                </p>
-              </div>
+              {enrollments.length === 0 ? (
+                <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No results available yet. Students need to take the exam first.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card>
+                      <CardContent className="p-4">
+                        <h3 className="text-lg font-medium mb-2">Pass Rate</h3>
+                        <div className="flex items-center">
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mr-2">
+                            <div 
+                              className="bg-green-500 h-2.5 rounded-full" 
+                              style={{ width: `${passRate}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm font-medium">{passRate}%</span>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          {passedCount} out of {studentCount} students passed
+                        </p>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardContent className="p-4">
+                        <h3 className="text-lg font-medium mb-2">Average Score</h3>
+                        <div className="text-2xl font-bold">
+                          {enrollments.filter(e => e.score !== null).length > 0 
+                            ? Math.round(enrollments.filter(e => e.score !== null).reduce((sum, e) => sum + e.score, 0) / 
+                                enrollments.filter(e => e.score !== null).length)
+                            : 0}%
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          Based on {enrollments.filter(e => e.score !== null).length} completed exams
+                        </p>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardContent className="p-4">
+                        <h3 className="text-lg font-medium mb-2">Completion Rate</h3>
+                        <div className="text-2xl font-bold">
+                          {Math.round((enrollments.filter(e => e.status === "COMPLETED" || e.status === "PASSED" || e.status === "FAILED").length / 
+                            enrollments.length) * 100)}%
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          {enrollments.filter(e => e.status === "COMPLETED" || e.status === "PASSED" || e.status === "FAILED").length} 
+                          {" "}out of {enrollments.length} students completed
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Exam Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Exam Preview: {exam.title}</DialogTitle>
+            <DialogDescription>
+              This is how students will see the exam. Questions are shown in order with all options.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <div className="space-y-8">
+              <div className="flex justify-between items-center p-4 border rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                <div>
+                  <p className="font-medium">Time Limit: {exam.duration} minutes</p>
+                  <p className="text-sm text-gray-500">Passing Score: {exam.passingScore}%</p>
+                </div>
+                <Badge>{questions.length} Questions</Badge>
+              </div>
+              
+              {questions.length === 0 ? (
+                <div className="text-center py-8 border border-dashed rounded-lg">
+                  <p className="text-gray-500">No questions have been added to this exam yet.</p>
+                </div>
+              ) : (
+                questions.map((question, index) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-4">
+                    <div className="flex justify-between">
+                      <h3 className="font-medium">Question {index + 1}</h3>
+                      <Badge>
+                        {question.points} {question.points === 1 ? "point" : "points"}
+                      </Badge>
+                    </div>
+                    
+                    <p>{question.text}</p>
+                    
+                    {question.type === "MULTIPLE_CHOICE" && question.options && (
+                      <div className="space-y-2 ml-4">
+                        {question.options.map((option, optIdx) => (
+                          <div key={optIdx} className="flex items-center space-x-2 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <div className="w-5 h-5 rounded-full border border-gray-400 flex items-center justify-center">
+                              {String.fromCharCode(65 + optIdx)}
+                            </div>
+                            <span>{option.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {question.type === "TRUE_FALSE" && (
+                      <div className="space-y-2 ml-4">
+                        <div className="flex items-center space-x-2 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800">
+                          <div className="w-5 h-5 rounded-full border border-gray-400 flex items-center justify-center">
+                            A
+                          </div>
+                          <span>True</span>
+                        </div>
+                        <div className="flex items-center space-x-2 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800">
+                          <div className="w-5 h-5 rounded-full border border-gray-400 flex items-center justify-center">
+                            B
+                          </div>
+                          <span>False</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {question.type === "SHORT_ANSWER" && (
+                      <div className="mt-2">
+                        <div className="border rounded p-3 bg-gray-50 dark:bg-gray-800 min-h-[80px] text-gray-400">
+                          Text answer area
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+              
+              <div className="flex justify-end space-x-4 border-t pt-4">
+                <Button variant="outline" disabled>Previous</Button>
+                <Button variant="outline">Next</Button>
+                <Button variant="default" disabled>Submit Exam</Button>
+              </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

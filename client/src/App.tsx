@@ -21,10 +21,6 @@ import Profile from "@/pages/profile";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 
-// Payment Pages
-import PaymentSuccessPage from "@/pages/payment/success";
-import PaymentCancelPage from "@/pages/payment/cancel";
-
 function Router() {
   return (
     <Switch>
@@ -39,8 +35,6 @@ function Router() {
       <ProtectedRoute path="/profile" component={Profile} />
       <ProtectedRoute path="/analytics" component={Analytics} />
       <ProtectedRoute path="/settings" component={Settings} />
-      <ProtectedRoute path="/payment/success" component={PaymentSuccessPage} />
-      <ProtectedRoute path="/payment/cancel" component={PaymentCancelPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

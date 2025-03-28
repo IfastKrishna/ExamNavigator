@@ -72,7 +72,7 @@ export const enrollments = pgTable("enrollments", {
   id: serial("id").primaryKey(),
   studentId: integer("student_id").notNull(),
   examId: integer("exam_id").notNull(),
-  status: text("status").notNull().default("PURCHASED"), // PURCHASED, STARTED, COMPLETED, FAILED, PASSED
+  status: text("status").notNull().default("ENROLLED"), // ENROLLED, ASSIGNED, STARTED, COMPLETED, FAILED, PASSED
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   score: doublePrecision("score"),
