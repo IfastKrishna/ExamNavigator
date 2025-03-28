@@ -1,6 +1,5 @@
 import React from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { UserRole } from "@shared/schema";
 import MainLayout from "@/components/layouts/main-layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,7 +36,7 @@ export default function AnalyticsPage() {
   
   const { data: students = [], isLoading: isLoadingStudents } = useQuery({
     queryKey: ["/api/users", { role: "STUDENT" }],
-    enabled: user?.role === UserRole.SUPER_ADMIN,
+    enabled: user?.role === "SUPER_ADMIN",
   });
   
   // Fetch analytics data
@@ -72,7 +71,7 @@ export default function AnalyticsPage() {
       if (!res.ok) throw new Error('Failed to fetch student performance data');
       return res.json();
     },
-    enabled: user?.role !== UserRole.STUDENT
+    enabled: user?.role !== "STUDENT"
   });
   
   const { data: examPerformance = [], isLoading: isLoadingExamPerformance } = useQuery({
@@ -92,8 +91,8 @@ export default function AnalyticsPage() {
     isLoadingPerformance || 
     isLoadingCategories || 
     isLoadingExamPerformance || 
-    (user?.role !== UserRole.STUDENT && isLoadingStudentPerformance) || 
-    (user?.role === UserRole.SUPER_ADMIN && isLoadingStudents);
+    (user?.role !== "STUDENT" && isLoadingStudentPerformance) || 
+    (user?.role === "SUPER_ADMIN" && isLoadingStudents);
   
   // Handle academy selection change
   const handleAcademyChange = (academyId: string) => {
@@ -130,7 +129,7 @@ export default function AnalyticsPage() {
   return (
     <MainLayout title="Analytics" subtitle="View performance metrics and statistics">
       {/* Academy selector (for Super Admin) */}
-      {user?.role === UserRole.SUPER_ADMIN && (
+      {user?.role === "SUPER_ADMIN" && (
         <div className="mb-6">
           <div className="flex justify-between items-center">
             <div className="text-lg font-medium">
@@ -162,10 +161,10 @@ export default function AnalyticsPage() {
         <TabsList className="w-full justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="exams">Exams</TabsTrigger>
-          {user?.role !== UserRole.STUDENT && (
+          {user?.role !== "STUDENT" && (
             <TabsTrigger value="students">Students</TabsTrigger>
           )}
-          {user?.role === UserRole.SUPER_ADMIN && (
+          {user?.role === "SUPER_ADMIN" && (
             <TabsTrigger value="academies">Academies</TabsTrigger>
           )}
         </TabsList>
@@ -514,7 +513,7 @@ export default function AnalyticsPage() {
         </TabsContent>
         
         {/* Students Tab */}
-        {user?.role !== UserRole.STUDENT && (
+        {user?.role !== "STUDENT" && (
           <TabsContent value="students" className="space-y-4">
             <Card>
               <CardHeader>
@@ -648,7 +647,7 @@ export default function AnalyticsPage() {
         )}
         
         {/* Academies Tab (Super Admin Only) */}
-        {user?.role === UserRole.SUPER_ADMIN && (
+        {user?.role === "SUPER_ADMIN" && (
           <TabsContent value="academies" className="space-y-4">
             <Card>
               <CardHeader>
