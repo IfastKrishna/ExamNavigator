@@ -27,14 +27,26 @@ import {
 } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, UserPlus, XCircle } from "lucide-react";
+import { AlertCircle, Loader2, Search, UserPlus, XCircle } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { User, UserRole } from "@shared/schema";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface AssignStudentsDialogProps {
   examId: number;
   examTitle: string;
+}
+
+interface ExamPurchaseInfo {
+  canAssign: boolean;
+  remainingQuantity: number;
+  purchase?: {
+    id: number;
+    quantity: number;
+    usedQuantity: number;
+  };
+  message?: string;
 }
 
 export default function AssignStudentsDialog({
@@ -57,6 +69,19 @@ export default function AssignStudentsDialog({
     queryKey: ["/api/exams", examId, "enrollments"],
     enabled: open,
   });
+  
+  // Check if this exam has a quantity limit
+  const { 
+    data: purchaseInfo,
+    isLoading: loadingPurchaseInfo 
+  } = useQuery<ExamPurchaseInfo>({
+    queryKey: ["/api/exam-purchases/can-assign", examId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/exam-purchases/can-assign?examId=${examId}`);
+      return res.json();
+    },
+    enabled: open,
+  });
 
   // Filter out already enrolled students
   const availableStudents = students.filter(student => {
@@ -74,6 +99,34 @@ export default function AssignStudentsDialog({
 
   // Function to toggle student selection
   const toggleStudentSelection = (studentId: number) => {
+    // Don't allow selecting more students than remaining quantity if there's a limit
+    if (
+      purchaseInfo && 
+      !purchaseInfo.canAssign && 
+      !selectedStudents.includes(studentId)
+    ) {
+      toast({
+        title: "Insufficient exam quantity",
+        description: "You've reached the maximum number of students you can assign to this exam.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (
+      purchaseInfo && 
+      purchaseInfo.canAssign && 
+      !selectedStudents.includes(studentId) && 
+      selectedStudents.length >= purchaseInfo.remainingQuantity
+    ) {
+      toast({
+        title: "Quantity limit reached",
+        description: `You can only assign ${purchaseInfo.remainingQuantity} more student(s) to this exam.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (selectedStudents.includes(studentId)) {
       setSelectedStudents(selectedStudents.filter(id => id !== studentId));
     } else {
@@ -88,6 +141,22 @@ export default function AssignStudentsDialog({
       setSearchQuery("");
     }
   }, [open]);
+  
+  // Mutation to increment used quantity after successful assignment
+  const incrementUsedQuantityMutation = useMutation({
+    mutationFn: async (purchaseId: number) => {
+      const response = await apiRequest("POST", "/api/exam-purchases/increment-used", {
+        purchaseId,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/exam-purchases/can-assign", examId] });
+    },
+    onError: (error) => {
+      console.error("Failed to increment used quantity:", error);
+    },
+  });
 
   // Mutation to assign students
   const assignStudentsMutation = useMutation({
@@ -121,12 +190,33 @@ export default function AssignStudentsDialog({
       });
       return;
     }
+    
+    // If there's a purchase with quantity limit, make sure there's enough quantity
+    if (purchaseInfo && purchaseInfo.purchase) {
+      const { purchase, remainingQuantity } = purchaseInfo;
+      
+      if (selectedStudents.length > remainingQuantity) {
+        toast({
+          title: "Insufficient quantity",
+          description: `You can only assign ${remainingQuantity} more student(s) to this exam.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     try {
       // Use Promise.all to assign all students in parallel
       await Promise.all(
         selectedStudents.map(studentId => assignStudentsMutation.mutateAsync(studentId))
       );
+      
+      // If exam is purchased, increment the used quantity for each assigned student
+      if (purchaseInfo?.purchase?.id) {
+        for (let i = 0; i < selectedStudents.length; i++) {
+          await incrementUsedQuantityMutation.mutateAsync(purchaseInfo.purchase.id);
+        }
+      }
 
       toast({
         title: "Students assigned",
@@ -162,6 +252,19 @@ export default function AssignStudentsDialog({
           </TabsList>
 
           <TabsContent value="assign" className="mt-4">
+            {/* Show quantity information if available */}
+            {!loadingPurchaseInfo && purchaseInfo && (
+              <Alert className="mb-4" variant={purchaseInfo.canAssign ? "default" : "destructive"}>
+                <AlertCircle className="h-4 w-4 mr-2" />
+                <AlertTitle>Exam Assignment Quota</AlertTitle>
+                <AlertDescription>
+                  {purchaseInfo.canAssign 
+                    ? `You can assign ${purchaseInfo.remainingQuantity} more student(s) to this exam.` 
+                    : "You have reached the maximum number of students for this exam."}
+                </AlertDescription>
+              </Alert>
+            )}
+            
             <div className="flex items-center mb-4">
               <Search className="mr-2 h-4 w-4 text-muted-foreground" />
               <Input

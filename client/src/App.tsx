@@ -15,6 +15,7 @@ import CreateAcademy from "@/pages/academies/create";
 import Exams from "@/pages/exams";
 import CreateExam from "@/pages/exams/create";
 import AvailableExams from "@/pages/exams/available-exams";
+import ExamPurchases from "@/pages/exams/purchases";
 import TakeExam from "@/pages/exams/take";
 import ExamResults from "@/pages/exams/results";
 import Students from "@/pages/students";
@@ -38,6 +39,7 @@ function Router() {
       <ProtectedRoute path="/exams/create" component={CreateExam} />
       <ProtectedRoute path="/exams/:examId/take" component={TakeExam} />
       <ProtectedRoute path="/exams/:examId/results" component={ExamResults} />
+      <ProtectedRoute path="/exams/purchases" component={ExamPurchases} />
       <ProtectedRoute path="/available-exams" component={AvailableExams} />
       <ProtectedRoute path="/students" component={Students} />
       <ProtectedRoute path="/certificates" component={Certificates} />

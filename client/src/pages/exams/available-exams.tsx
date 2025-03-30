@@ -176,7 +176,8 @@ export default function AvailableExams() {
           {selectedExam && (
             <CheckoutPage 
               examId={selectedExam.id} 
-              examTitle={selectedExam.title} 
+              examTitle={selectedExam.title}
+              examPrice={selectedExam.price} 
             />
           )}
         </DialogContent>

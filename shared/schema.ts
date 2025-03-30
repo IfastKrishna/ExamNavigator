@@ -118,6 +118,21 @@ export const certificates = pgTable("certificates", {
   createdAt: timestamp("created_at").defaultNow()
 });
 
+// Academy Exam Purchases
+export const examPurchases = pgTable("exam_purchases", {
+  id: serial("id").primaryKey(),
+  academyId: integer("academy_id").notNull(),
+  examId: integer("exam_id").notNull(),
+  quantity: integer("quantity").notNull().default(1), // Number of licenses purchased
+  usedQuantity: integer("used_quantity").notNull().default(0), // Number of licenses assigned
+  totalPrice: doublePrecision("total_price").notNull(), // Total price paid
+  purchaseDate: timestamp("purchase_date").notNull().defaultNow(),
+  status: text("status").notNull().default("ACTIVE"), // ACTIVE, EXPIRED, CANCELED
+  expiryDate: timestamp("expiry_date"), // Optional expiry date
+  paymentId: text("payment_id"), // Reference to payment/transaction ID
+  createdAt: timestamp("created_at").defaultNow()
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -197,6 +212,17 @@ export const insertExamSchema = createInsertSchema(exams).pick({
   manualReview: true
 });
 
+// Exam purchase schema
+export const insertExamPurchaseSchema = createInsertSchema(examPurchases).pick({
+  academyId: true,
+  examId: true,
+  quantity: true,
+  totalPrice: true,
+  status: true,
+  expiryDate: true,
+  paymentId: true
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -224,3 +250,6 @@ export type InsertCertificateTemplate = z.infer<typeof insertCertificateTemplate
 
 export type Certificate = typeof certificates.$inferSelect;
 export type InsertCertificate = z.infer<typeof insertCertificateSchema>;
+
+export type ExamPurchase = typeof examPurchases.$inferSelect;
+export type InsertExamPurchase = z.infer<typeof insertExamPurchaseSchema>;

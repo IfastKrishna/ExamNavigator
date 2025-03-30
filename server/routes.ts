@@ -207,16 +207,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Endpoint for academies to purchase an exam
+  // Get exam purchases for an academy
+  app.get("/api/exam-purchases", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    
+    try {
+      let purchases = [];
+      
+      if (req.user.role === UserRole.SUPER_ADMIN) {
+        // Super admin can see all purchases
+        const academies = await storage.getAcademies();
+        for (const academy of academies) {
+          const academyPurchases = await storage.getExamPurchasesByAcademy(academy.id);
+          purchases.push(...academyPurchases);
+        }
+      } else if (req.user.role === UserRole.ACADEMY) {
+        // Academy can only see their purchases
+        const academy = await storage.getAcademyByUserId(req.user.id);
+        if (academy) {
+          purchases = await storage.getExamPurchasesByAcademy(academy.id);
+        }
+      } else {
+        return res.sendStatus(403);
+      }
+      
+      // Enrich purchase data with exam and academy details
+      const enrichedPurchases = await Promise.all(
+        purchases.map(async (purchase) => {
+          const exam = await storage.getExam(purchase.examId);
+          const academy = await storage.getAcademy(purchase.academyId);
+          return {
+            ...purchase,
+            examTitle: exam ? exam.title : "Unknown Exam",
+            academyName: academy ? academy.name : "Unknown Academy"
+          };
+        })
+      );
+      
+      res.json(enrichedPurchases);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching exam purchases" });
+    }
+  });
+  
+  // Endpoint for academies to purchase an exam with quantity
   app.post("/api/exams/purchase", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
       return res.sendStatus(403);
     }
     
     try {
-      const { examId } = req.body;
+      const { examId, quantity } = req.body;
       if (!examId) {
         return res.status(400).json({ message: "Exam ID is required" });
+      }
+      
+      // Validate quantity
+      const purchaseQuantity = quantity ? parseInt(quantity) : 1;
+      if (isNaN(purchaseQuantity) || purchaseQuantity < 1) {
+        return res.status(400).json({ message: "Invalid quantity. Must be at least 1." });
       }
       
       // Get the exam to purchase
@@ -236,61 +287,122 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Academy not found for this user" });
       }
       
-      // Check if academy already owns this exam
-      const academyExams = await storage.getExamsByAcademy(buyerAcademy.id);
-      const alreadyOwns = academyExams.some(exam => 
-        exam.title === examToPurchase.title && 
-        exam.description === examToPurchase.description
-      );
+      // Check if academy already has purchased this exam
+      const existingPurchase = await storage.getExamPurchaseByAcademyAndExam(buyerAcademy.id, examId);
       
-      if (alreadyOwns) {
-        return res.status(400).json({ message: "Academy already owns this exam" });
-      }
-      
-      // Create a copy of the exam for this academy
-      const newExam = await storage.createExam({
-        title: examToPurchase.title,
-        description: examToPurchase.description,
-        duration: examToPurchase.duration,
-        academyId: buyerAcademy.id,
-        passingScore: examToPurchase.passingScore,
-        status: "DRAFT", // Set as draft until the academy publishes it
-        price: 0, // Reset price for the academy's copy
-        examDate: examToPurchase.examDate,
-        examTime: examToPurchase.examTime,
-        certificateTemplateId: examToPurchase.certificateTemplateId,
-        manualReview: examToPurchase.manualReview
-      });
-      
-      // Copy all questions and options
-      const originalQuestions = await storage.getQuestionsByExam(examToPurchase.id);
-      
-      for (const originalQuestion of originalQuestions) {
-        // Create the question
-        const newQuestion = await storage.createQuestion({
-          examId: newExam.id,
-          text: originalQuestion.text,
-          type: originalQuestion.type,
-          points: originalQuestion.points
+      if (existingPurchase) {
+        // Update existing purchase with additional quantity
+        const updatedPurchase = await storage.updateExamPurchase(existingPurchase.id, {
+          quantity: existingPurchase.quantity + purchaseQuantity,
+          totalPrice: existingPurchase.totalPrice + (examToPurchase.price * purchaseQuantity)
         });
         
-        // Get and copy the options
-        const originalOptions = await storage.getOptionsByQuestion(originalQuestion.id);
-        for (const originalOption of originalOptions) {
-          await storage.createOption({
-            questionId: newQuestion.id,
-            text: originalOption.text,
-            isCorrect: originalOption.isCorrect
-          });
-        }
+        return res.json({
+          message: "Exam quantity increased successfully",
+          purchase: updatedPurchase
+        });
       }
+      
+      // Create a new purchase record
+      const purchase = await storage.createExamPurchase({
+        academyId: buyerAcademy.id,
+        examId: examToPurchase.id,
+        quantity: purchaseQuantity,
+        usedQuantity: 0,
+        pricePerUnit: examToPurchase.price,
+        totalPrice: examToPurchase.price * purchaseQuantity,
+        purchaseDate: new Date(),
+        status: "COMPLETED",
+        transactionId: nanoid(10)
+      });
       
       res.status(201).json({ 
         message: "Exam purchased successfully", 
-        exam: newExam 
+        purchase
       });
     } catch (error) {
+      console.error("Purchase error:", error);
       res.status(500).json({ message: "Error purchasing exam" });
+    }
+  });
+  
+  // Check if an academy can assign an exam to a student (has enough quantity)
+  app.get("/api/exam-purchases/can-assign", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const { examId } = req.query;
+      if (!examId) {
+        return res.status(400).json({ message: "Exam ID is required" });
+      }
+      
+      // Get the academy
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy) {
+        return res.status(404).json({ message: "Academy not found for this user" });
+      }
+      
+      // Check if the academy has purchased this exam
+      const purchase = await storage.getExamPurchaseByAcademyAndExam(academy.id, Number(examId));
+      
+      if (!purchase) {
+        return res.json({ canAssign: false, message: "Exam not purchased" });
+      }
+      
+      // Check if there's remaining quantity
+      const remainingQuantity = purchase.quantity - purchase.usedQuantity;
+      const canAssign = remainingQuantity > 0;
+      
+      res.json({
+        canAssign,
+        remainingQuantity,
+        purchase
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Error checking assignment eligibility" });
+    }
+  });
+  
+  // Endpoint to increment the used quantity when assigning an exam
+  app.post("/api/exam-purchases/increment-used", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const { purchaseId } = req.body;
+      if (!purchaseId) {
+        return res.status(400).json({ message: "Purchase ID is required" });
+      }
+      
+      // Get the purchase
+      const purchase = await storage.getExamPurchase(purchaseId);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+      
+      // Get the academy
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy || academy.id !== purchase.academyId) {
+        return res.sendStatus(403);
+      }
+      
+      // Check if there's remaining quantity
+      if (purchase.usedQuantity >= purchase.quantity) {
+        return res.status(400).json({ message: "No remaining quantity to use" });
+      }
+      
+      // Increment the used quantity
+      const updatedPurchase = await storage.incrementUsedQuantity(purchaseId);
+      
+      res.json({
+        success: true,
+        purchase: updatedPurchase
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Error incrementing used quantity" });
     }
   });
   
@@ -1351,10 +1463,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      const { examId } = req.body;
+      const { examId, quantity = 1 } = req.body;
+      const parsedQuantity = parseInt(quantity);
       
       if (!examId) {
         return res.status(400).json({ message: "Exam ID is required" });
+      }
+      
+      if (isNaN(parsedQuantity) || parsedQuantity < 1) {
+        return res.status(400).json({ message: "Invalid quantity. Must be at least 1." });
       }
       
       const exam = await storage.getExam(parseInt(examId));
@@ -1367,21 +1484,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Exam doesn't have a price" });
       }
       
+      // Calculate total amount based on quantity
+      const totalAmount = exam.price * parsedQuantity;
+      
       // Create a payment intent
       const paymentIntent = await stripeService.createPaymentIntent({
-        amount: exam.price * 100, // convert dollars to cents
+        amount: totalAmount * 100, // convert dollars to cents
         currency: "usd",
-        description: `Payment for exam: ${exam.title}`,
+        description: `Payment for ${parsedQuantity} license(s) of exam: ${exam.title}`,
         metadata: {
           examId: exam.id.toString(),
-          academyId: exam.academyId.toString(),
-          buyerUserId: req.user.id.toString()
+          academyId: req.user.id.toString(), // This is the academy buying the exam
+          quantity: parsedQuantity.toString()
         }
       });
       
       res.json({
         clientSecret: paymentIntent.client_secret,
-        amount: exam.price
+        amount: totalAmount * 100, // Send the amount in cents to match Stripe expectations
+        quantity: parsedQuantity
       });
     } catch (error) {
       console.error("Payment intent creation error:", error);
@@ -1456,65 +1577,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (event.type === 'payment_intent.succeeded') {
         const paymentIntent = event.data.object;
-        const { examId, buyerUserId } = paymentIntent.metadata;
+        const { examId, academyId, quantity = "1" } = paymentIntent.metadata;
+        const parsedQuantity = parseInt(quantity);
         
         // Process the successful payment
-        // Find the academy for the buyer
-        const user = await storage.getUser(parseInt(buyerUserId));
-        if (!user || user.role !== UserRole.ACADEMY) {
-          throw new Error("User not found or not an academy");
+        // Find the academy purchasing the exam
+        const academy = await storage.getAcademy(parseInt(academyId));
+        if (!academy) {
+          throw new Error("Academy not found");
         }
-        
-        const buyerAcademy = await storage.getAcademyByUserId(parseInt(buyerUserId));
-        if (!buyerAcademy) {
-          throw new Error("Academy not found for this user");
-        }
-        
+
         // Get the exam to purchase
         const examToPurchase = await storage.getExam(parseInt(examId));
         if (!examToPurchase) {
           throw new Error("Exam not found");
         }
         
-        // Create a copy of the exam for this academy (similar to the existing purchase route)
-        const newExam = await storage.createExam({
-          title: examToPurchase.title,
-          description: examToPurchase.description,
-          duration: examToPurchase.duration,
-          academyId: buyerAcademy.id,
-          passingScore: examToPurchase.passingScore,
-          status: "DRAFT", // Set as draft until the academy publishes it
-          price: 0, // Reset price for the academy's copy
-          examDate: examToPurchase.examDate,
-          examTime: examToPurchase.examTime,
-          certificateTemplateId: examToPurchase.certificateTemplateId,
-          manualReview: examToPurchase.manualReview
+        // Calculate the total price
+        const totalPrice = examToPurchase.price * parsedQuantity;
+        
+        // Create an exam purchase record
+        await storage.createExamPurchase({
+          academyId: academy.id,
+          examId: examToPurchase.id,
+          quantity: parsedQuantity,
+          usedQuantity: 0, // Initially 0 licenses used
+          totalPrice: totalPrice,
+          status: "ACTIVE",
+          purchaseDate: new Date(),
+          paymentId: paymentIntent.id
         });
         
-        // Copy all questions and options
-        const originalQuestions = await storage.getQuestionsByExam(examToPurchase.id);
-        
-        for (const originalQuestion of originalQuestions) {
-          // Create the question
-          const newQuestion = await storage.createQuestion({
-            examId: newExam.id,
-            text: originalQuestion.text,
-            type: originalQuestion.type,
-            points: originalQuestion.points
-          });
-          
-          // Get and copy the options
-          const originalOptions = await storage.getOptionsByQuestion(originalQuestion.id);
-          for (const originalOption of originalOptions) {
-            await storage.createOption({
-              questionId: newQuestion.id,
-              text: originalOption.text,
-              isCorrect: originalOption.isCorrect
-            });
-          }
-        }
-        
-        console.log(`Exam purchased successfully: ${newExam.title}`);
+        console.log(`Exam purchased successfully: ${examToPurchase.title} - ${parsedQuantity} licenses`);
       }
       
       res.json({ received: true });

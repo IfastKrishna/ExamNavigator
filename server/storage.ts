@@ -1,6 +1,6 @@
 import { 
   users, academies, exams, questions, options, 
-  enrollments, attempts, certificates, certificateTemplates,
+  enrollments, attempts, certificates, certificateTemplates, examPurchases,
   type User, type InsertUser,
   type Academy, type InsertAcademy,
   type Exam, type InsertExam,
@@ -10,6 +10,7 @@ import {
   type Attempt, type InsertAttempt,
   type Certificate, type InsertCertificate,
   type CertificateTemplate, type InsertCertificateTemplate,
+  type ExamPurchase, type InsertExamPurchase,
   UserRole
 } from "@shared/schema";
 import session from "express-session";
@@ -76,6 +77,14 @@ export interface IStorage {
   getCertificatesByAcademy(academyId: number): Promise<Certificate[]>;
   getCertificateByEnrollment(enrollmentId: number): Promise<Certificate | undefined>;
   
+  // Exam Purchase methods
+  createExamPurchase(purchase: InsertExamPurchase): Promise<ExamPurchase>;
+  getExamPurchase(id: number): Promise<ExamPurchase | undefined>;
+  getExamPurchasesByAcademy(academyId: number): Promise<ExamPurchase[]>;
+  getExamPurchasesByExam(examId: number): Promise<ExamPurchase[]>;
+  getExamPurchaseByAcademyAndExam(academyId: number, examId: number): Promise<ExamPurchase | undefined>;
+  incrementUsedQuantity(purchaseId: number): Promise<ExamPurchase | undefined>;
+  
   // Session store
   sessionStore: any;
 }
@@ -90,6 +99,7 @@ export class MemStorage implements IStorage {
   private attempts: Map<number, Attempt>;
   private certificateTemplates: Map<number, CertificateTemplate>;
   private certificates: Map<number, Certificate>;
+  private examPurchases: Map<number, ExamPurchase>;
   sessionStore: any;
   
   private currentIds: {
@@ -102,6 +112,7 @@ export class MemStorage implements IStorage {
     attempts: number;
     certificateTemplates: number;
     certificates: number;
+    examPurchases: number;
   };
 
   constructor() {
@@ -114,6 +125,7 @@ export class MemStorage implements IStorage {
     this.attempts = new Map();
     this.certificateTemplates = new Map();
     this.certificates = new Map();
+    this.examPurchases = new Map();
     
     this.currentIds = {
       users: 1,
@@ -124,7 +136,8 @@ export class MemStorage implements IStorage {
       enrollments: 1,
       attempts: 1,
       certificateTemplates: 1,
-      certificates: 1
+      certificates: 1,
+      examPurchases: 1
     };
     
     this.sessionStore = new MemoryStore({
@@ -528,6 +541,68 @@ export class MemStorage implements IStorage {
   
   async getCertificateTemplates(): Promise<CertificateTemplate[]> {
     return Array.from(this.certificateTemplates.values());
+  }
+  
+  // Exam Purchase methods
+  async createExamPurchase(insertPurchase: InsertExamPurchase): Promise<ExamPurchase> {
+    const id = this.currentIds.examPurchases++;
+    const now = new Date();
+    const status = insertPurchase.status || "COMPLETED";
+    
+    const examPurchase: ExamPurchase = {
+      ...insertPurchase,
+      id,
+      createdAt: now,
+      status,
+      usedQuantity: 0
+    };
+    
+    this.examPurchases.set(id, examPurchase);
+    return examPurchase;
+  }
+  
+  async getExamPurchase(id: number): Promise<ExamPurchase | undefined> {
+    return this.examPurchases.get(id);
+  }
+  
+  async getExamPurchasesByAcademy(academyId: number): Promise<ExamPurchase[]> {
+    return Array.from(this.examPurchases.values()).filter(
+      (purchase) => purchase.academyId === academyId
+    );
+  }
+  
+  async getExamPurchasesByExam(examId: number): Promise<ExamPurchase[]> {
+    return Array.from(this.examPurchases.values()).filter(
+      (purchase) => purchase.examId === examId
+    );
+  }
+  
+  async getExamPurchaseByAcademyAndExam(academyId: number, examId: number): Promise<ExamPurchase | undefined> {
+    return Array.from(this.examPurchases.values()).find(
+      (purchase) => purchase.academyId === academyId && purchase.examId === examId
+    );
+  }
+  
+  async incrementUsedQuantity(purchaseId: number): Promise<ExamPurchase | undefined> {
+    const purchase = this.examPurchases.get(purchaseId);
+    if (!purchase) return undefined;
+    
+    const updatedPurchase = { 
+      ...purchase, 
+      usedQuantity: purchase.usedQuantity + 1 
+    };
+    
+    this.examPurchases.set(purchaseId, updatedPurchase);
+    return updatedPurchase;
+  }
+  
+  async updateExamPurchase(id: number, purchaseData: Partial<ExamPurchase>): Promise<ExamPurchase | undefined> {
+    const purchase = this.examPurchases.get(id);
+    if (!purchase) return undefined;
+    
+    const updatedPurchase = { ...purchase, ...purchaseData };
+    this.examPurchases.set(id, updatedPurchase);
+    return updatedPurchase;
   }
   
   async getDefaultCertificateTemplate(): Promise<CertificateTemplate | undefined> {
