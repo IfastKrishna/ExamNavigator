@@ -1456,6 +1456,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment Routes
+  // Fake payment processing endpoint
+  app.post("/api/payment/fake-process", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
+    
+    try {
+      const { clientSecret } = req.body;
+      
+      // Extract payment intent ID from client secret (for real Stripe this would be different)
+      // In our case we can just use the original intent data or create a fake one
+      const [examId, quantity] = clientSecret.split('_fake_');
+      
+      // If we have valid data, process the purchase
+      if (examId) {
+        const parsedExamId = parseInt(examId);
+        const parsedQuantity = parseInt(quantity || '1');
+        
+        // Get the exam to purchase
+        const examToPurchase = await storage.getExam(parsedExamId);
+        if (!examToPurchase) {
+          return res.status(404).json({ message: "Exam not found" });
+        }
+        
+        // Calculate total price
+        const totalPrice = examToPurchase.price * parsedQuantity;
+        
+        // Create exam purchase record
+        await storage.createExamPurchase({
+          academyId: req.user.id,
+          examId: parsedExamId,
+          quantity: parsedQuantity,
+          usedQuantity: 0,
+          totalPrice: totalPrice,
+          status: "ACTIVE",
+          purchaseDate: new Date(),
+          paymentId: `fake_payment_${Date.now()}`
+        });
+        
+        console.log(`Fake payment processed: ${examToPurchase.title} - ${parsedQuantity} licenses`);
+        
+        return res.json({ success: true });
+      }
+      
+      return res.status(400).json({ message: "Invalid client secret" });
+    } catch (error) {
+      console.error("Fake payment processing error:", error);
+      res.status(500).json({ message: "Error processing payment" });
+    }
+  });
+  
   // Create a payment intent
   app.post("/api/payment/create-intent", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
@@ -1487,20 +1538,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Calculate total amount based on quantity
       const totalAmount = exam.price * parsedQuantity;
       
-      // Create a payment intent
-      const paymentIntent = await stripeService.createPaymentIntent({
-        amount: totalAmount * 100, // convert dollars to cents
-        currency: "usd",
-        description: `Payment for ${parsedQuantity} license(s) of exam: ${exam.title}`,
-        metadata: {
-          examId: exam.id.toString(),
-          academyId: req.user.id.toString(), // This is the academy buying the exam
-          quantity: parsedQuantity.toString()
-        }
-      });
+      // For our fake implementation, we'll create a fake client secret
+      // that encodes the exam ID and quantity
+      const fakeClientSecret = `${exam.id}_fake_${parsedQuantity}`;
       
       res.json({
-        clientSecret: paymentIntent.client_secret,
+        clientSecret: fakeClientSecret,
         amount: totalAmount * 100, // Send the amount in cents to match Stripe expectations
         quantity: parsedQuantity
       });

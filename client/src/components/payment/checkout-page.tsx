@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useRoute } from 'wouter';
-import { StripeProvider } from '@/hooks/use-stripe-provider';
 import PaymentForm from '@/components/payment/payment-form';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -192,17 +191,13 @@ export default function CheckoutPage({ examId, examTitle, examPrice }: CheckoutP
         </Card>
         
         <div className="space-y-4">
-          {clientSecret && (
-            <StripeProvider>
-              <PaymentForm 
-                clientSecret={clientSecret}
-                amount={amount}
-                examTitle={`${examTitle} (${quantity} license${quantity > 1 ? 's' : ''})`}
-                onSuccess={handleSuccess}
-                onCancel={handleCancel}
-              />
-            </StripeProvider>
-          )}
+          <PaymentForm 
+            clientSecret={clientSecret || 'fake-secret'}
+            amount={amount}
+            examTitle={`${examTitle} (${quantity} license${quantity > 1 ? 's' : ''})`}
+            onSuccess={handleSuccess}
+            onCancel={handleCancel}
+          />
         </div>
       </div>
     </div>

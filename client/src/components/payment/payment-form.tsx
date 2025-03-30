@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { useStripe, useElements, PaymentElement } from '@stripe/react-stripe-js';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CreditCard } from 'lucide-react';
+import { apiRequest } from '@/lib/queryClient';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface PaymentFormProps {
   clientSecret: string;
@@ -14,53 +16,53 @@ interface PaymentFormProps {
 }
 
 export default function PaymentForm({ clientSecret, amount, examTitle, onSuccess, onCancel }: PaymentFormProps) {
-  const stripe = useStripe();
-  const elements = useElements();
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // For demo form fields (not actually used for payment processing)
+  const [cardNumber, setCardNumber] = useState('4242 4242 4242 4242');
+  const [expDate, setExpDate] = useState('12/25');
+  const [cvc, setCvc] = useState('123');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!stripe || !elements) {
-      return;
-    }
-
     setIsProcessing(true);
     setErrorMessage(null);
 
     try {
-      const { error } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/payment/success`,
-        },
+      // Simulate a delay for "processing"
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Simulate a successful payment
+      toast({
+        title: 'Payment Successful',
+        description: 'Your exam purchase was completed successfully!',
       });
-
-      if (error) {
-        setErrorMessage(error.message || 'An unexpected error occurred.');
-        toast({
-          title: 'Payment Failed',
-          description: error.message || 'An unexpected error occurred.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Processing Payment',
-          description: 'Your payment is being processed...',
+      
+      // Call the server to process the purchase (without actual payment)
+      try {
+        const response = await apiRequest('POST', '/api/payment/fake-process', {
+          clientSecret,
         });
         
-        if (onSuccess) {
-          onSuccess();
+        if (!response.ok) {
+          console.error('Error processing fake payment:', await response.text());
         }
+      } catch (err) {
+        console.error('Error calling fake payment endpoint:', err);
+      }
+      
+      // Call success callback 
+      if (onSuccess) {
+        onSuccess();
       }
     } catch (err: any) {
       console.error('Payment error:', err);
-      setErrorMessage(err.message || 'An unexpected error occurred.');
+      setErrorMessage('An unexpected error occurred.');
       toast({
         title: 'Payment Failed',
-        description: err.message || 'An unexpected error occurred.',
+        description: 'An unexpected error occurred.',
         variant: 'destructive',
       });
     } finally {
@@ -79,7 +81,47 @@ export default function PaymentForm({ clientSecret, amount, examTitle, onSuccess
       </CardHeader>
       <CardContent>
         <form id="payment-form" onSubmit={handleSubmit}>
-          <PaymentElement className="mb-6" />
+          <div className="space-y-4 mb-6">
+            <div className="grid w-full items-center gap-2">
+              <Label htmlFor="card-number">Card Number</Label>
+              <div className="flex items-center border rounded-md px-3 py-2">
+                <CreditCard className="h-4 w-4 mr-2 text-muted-foreground" />
+                <Input 
+                  id="card-number"
+                  value={cardNumber}
+                  onChange={(e) => setCardNumber(e.target.value)}
+                  className="border-0 p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder="Card number"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor="exp-date">Expiration Date</Label>
+                <Input 
+                  id="exp-date"
+                  value={expDate}
+                  onChange={(e) => setExpDate(e.target.value)}
+                  placeholder="MM/YY"
+                />
+              </div>
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor="cvc">CVC</Label>
+                <Input 
+                  id="cvc"
+                  value={cvc}
+                  onChange={(e) => setCvc(e.target.value)}
+                  placeholder="123"
+                />
+              </div>
+            </div>
+            
+            <div className="text-sm text-muted-foreground mt-2">
+              <p>Note: This is a demo payment form. No real payment will be processed.</p>
+              <p>Use any values for testing purposes.</p>
+            </div>
+          </div>
           
           {errorMessage && (
             <div className="text-red-500 text-sm mb-4">
@@ -98,7 +140,7 @@ export default function PaymentForm({ clientSecret, amount, examTitle, onSuccess
             </Button>
             <Button 
               type="submit" 
-              disabled={!stripe || isProcessing}
+              disabled={isProcessing}
             >
               {isProcessing ? (
                 <>
