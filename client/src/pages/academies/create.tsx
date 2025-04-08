@@ -50,10 +50,9 @@ const createAcademySchema = z.object({
   name: z.string().min(3, "Academy name must be at least 3 characters"),
   description: z.string().min(10, "Description must be at least 10 characters"),
   status: z.enum(["ACTIVE", "PENDING", "SUSPENDED"]),
-  adminName: z.string().min(2, "Admin name must be at least 2 characters"),
-  adminEmail: z.string().email("Please enter a valid email address"),
-  adminUsername: z.string().min(3, "Username must be at least 3 characters"),
-  adminPassword: z.string().min(6, "Password must be at least 6 characters"),
+  academyUsername: z.string().min(3, "Username must be at least 3 characters"),
+  academyPassword: z.string().min(6, "Password must be at least 6 characters"),
+  academyEmail: z.string().email("Please enter a valid email address"),
 });
 
 type CreateAcademyForm = z.infer<typeof createAcademySchema>;
@@ -78,22 +77,21 @@ export default function CreateAcademyPage() {
       name: "",
       description: "",
       status: "ACTIVE",
-      adminName: "",
-      adminEmail: "",
-      adminUsername: "",
-      adminPassword: "",
+      academyUsername: "",
+      academyPassword: "",
+      academyEmail: "",
     },
   });
 
   // Create academy and admin user mutation
   const createAcademyMutation = useMutation({
     mutationFn: async (data: CreateAcademyForm) => {
-      // First, create the admin user
+      // First, create the admin user for the academy
       const adminData = {
-        name: data.adminName,
-        email: data.adminEmail,
-        username: data.adminUsername,
-        password: data.adminPassword,
+        name: data.name, // Use academy name as the admin name
+        email: data.academyEmail,
+        username: data.academyUsername,
+        password: data.academyPassword,
         role: UserRole.ACADEMY,
       };
       
@@ -114,7 +112,7 @@ export default function CreateAcademyPage() {
     onSuccess: () => {
       toast({
         title: "Academy Created",
-        description: "The academy and admin account have been created successfully.",
+        description: "The academy has been created successfully with login credentials.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/academies"] });
       setLocation("/academies");
@@ -137,7 +135,7 @@ export default function CreateAcademyPage() {
   }
 
   return (
-    <MainLayout title="Create Academy" subtitle="Create a new academy with admin credentials">
+    <MainLayout title="Create Academy" subtitle="Create a new academy with login credentials">
       <div className="mb-6">
         <Button 
           variant="outline" 
@@ -152,7 +150,7 @@ export default function CreateAcademyPage() {
         <CardHeader>
           <CardTitle className="text-2xl">Create New Academy</CardTitle>
           <CardDescription>
-            Fill out the form below to create a new academy and its administrator account.
+            Fill out the form below to create a new academy with its login credentials.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -161,14 +159,16 @@ export default function CreateAcademyPage() {
               <TabsTrigger 
                 value="academy" 
                 onClick={() => setIsCreatingAdmin(true)}
+                id="academy-tab-trigger"
               >
                 Academy Information
               </TabsTrigger>
               <TabsTrigger 
-                value="admin" 
+                value="credentials" 
                 onClick={() => setIsCreatingAdmin(false)}
+                id="admin-tab-trigger"
               >
-                Admin Credentials
+                Academy Credentials
               </TabsTrigger>
             </TabsList>
 
@@ -248,40 +248,24 @@ export default function CreateAcademyPage() {
                           });
                         }}
                       >
-                        Next: Admin Credentials
+                        Next: Academy Credentials
                       </Button>
                     </div>
                   </div>
                 </TabsContent>
 
-                <TabsContent value="admin">
+                <TabsContent value="credentials">
                   <div className="space-y-4">
                     <FormField
                       control={form.control}
-                      name="adminName"
+                      name="academyEmail"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Admin Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter admin name" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Full name of the academy administrator.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="adminEmail"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Admin Email</FormLabel>
+                          <FormLabel>Academy Email</FormLabel>
                           <FormControl>
                             <Input 
                               type="email"
-                              placeholder="Enter admin email" 
+                              placeholder="Enter academy email" 
                               {...field} 
                             />
                           </FormControl>
@@ -296,7 +280,7 @@ export default function CreateAcademyPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
-                        name="adminUsername"
+                        name="academyUsername"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Username</FormLabel>
@@ -304,7 +288,7 @@ export default function CreateAcademyPage() {
                               <Input placeholder="Enter username" {...field} />
                             </FormControl>
                             <FormDescription>
-                              Username for the admin account.
+                              Username for the academy account.
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
@@ -312,7 +296,7 @@ export default function CreateAcademyPage() {
                       />
                       <FormField
                         control={form.control}
-                        name="adminPassword"
+                        name="academyPassword"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Password</FormLabel>
