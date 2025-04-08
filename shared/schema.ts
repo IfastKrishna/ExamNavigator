@@ -26,73 +26,73 @@ export const academies = pgTable("academies", {
   userId: integer("userId").notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  logoUrl: text("logo_url"),
+  logoUrl: text("logoUrl"),
   website: text("website"),
   location: text("location"),
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
+  contactEmail: text("contactEmail"),
+  contactPhone: text("contactPhone"),
   createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Exams table
 export const exams = pgTable("exams", {
   id: serial("id").primaryKey(),
-  academyId: integer("academy_id").notNull(),
+  academyId: integer("academyId").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   duration: integer("duration").notNull(), // in minutes
-  passingScore: doublePrecision("passing_score").notNull(), // percentage (0-100)
+  passingScore: doublePrecision("passingScore").notNull(), // percentage (0-100)
   price: doublePrecision("price").notNull().default(0),
   status: text("status").notNull().default("DRAFT"), // DRAFT, PUBLISHED, ARCHIVED
-  examDate: timestamp("exam_date"), // scheduled date for the exam
-  examTime: text("exam_time"), // scheduled time for the exam (e.g., "14:00")
-  certificateTemplateId: integer("certificate_template_id"), // reference to certificate template
-  manualReview: boolean("manual_review").notNull().default(false), // whether exam needs manual review
-  createdAt: timestamp("created_at").defaultNow()
+  examDate: timestamp("examDate"), // scheduled date for the exam
+  examTime: text("examTime"), // scheduled time for the exam (e.g., "14:00")
+  certificateTemplateId: integer("certificateTemplateId"), // reference to certificate template
+  manualReview: boolean("manualReview").notNull().default(false), // whether exam needs manual review
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Questions table
 export const questions = pgTable("questions", {
   id: serial("id").primaryKey(),
-  examId: integer("exam_id").notNull(),
+  examId: integer("examId").notNull(),
   text: text("text").notNull(),
   type: text("type").notNull().default("MULTIPLE_CHOICE"), // MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER
   points: integer("points").notNull().default(1),
-  createdAt: timestamp("created_at").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Options table (for multiple choice questions)
 export const options = pgTable("options", {
   id: serial("id").primaryKey(),
-  questionId: integer("question_id").notNull(),
+  questionId: integer("questionId").notNull(),
   text: text("text").notNull(),
-  isCorrect: boolean("is_correct").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow()
+  isCorrect: boolean("isCorrect").notNull().default(false),
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Student-Exam enrollments
 export const enrollments = pgTable("enrollments", {
   id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull(),
-  examId: integer("exam_id").notNull(),
+  studentId: integer("studentId").notNull(),
+  examId: integer("examId").notNull(),
   status: text("status").notNull().default("PURCHASED"), // PURCHASED, STARTED, COMPLETED, FAILED, PASSED
-  startedAt: timestamp("started_at"),
-  completedAt: timestamp("completed_at"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
   score: doublePrecision("score"),
-  certificateId: text("certificate_id"),
-  isAssigned: boolean("is_assigned").default(false), // Flag for students assigned by academies
-  createdAt: timestamp("created_at").defaultNow()
+  certificateId: text("certificateId"),
+  isAssigned: boolean("isAssigned").default(false), // Flag for students assigned by academies
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Attempted answers by students
 export const attempts = pgTable("attempts", {
   id: serial("id").primaryKey(),
-  enrollmentId: integer("enrollment_id").notNull(),
-  questionId: integer("question_id").notNull(),
-  selectedOptionId: integer("selected_option_id"),
-  textAnswer: text("text_answer"),
-  isCorrect: boolean("is_correct"),
-  createdAt: timestamp("created_at").defaultNow()
+  enrollmentId: integer("enrollmentId").notNull(),
+  questionId: integer("questionId").notNull(),
+  selectedOptionId: integer("selectedOptionId"),
+  textAnswer: text("textAnswer"),
+  isCorrect: boolean("isCorrect"),
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Certificate Templates
@@ -101,37 +101,37 @@ export const certificateTemplates = pgTable("certificate_templates", {
   name: text("name").notNull(),
   description: text("description"),
   template: text("template").notNull(), // HTML/CSS template for certificate
-  isDefault: boolean("is_default").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow()
+  isDefault: boolean("isDefault").notNull().default(false),
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Certificates
 export const certificates = pgTable("certificates", {
   id: serial("id").primaryKey(),
-  enrollmentId: integer("enrollment_id").notNull().unique(),
-  studentId: integer("student_id").notNull(),
-  examId: integer("exam_id").notNull(),
-  academyId: integer("academy_id").notNull(),
-  templateId: integer("template_id"), // Reference to certificate template
-  certificateNumber: text("certificate_number").notNull().unique(),
+  enrollmentId: integer("enrollmentId").notNull().unique(),
+  studentId: integer("studentId").notNull(),
+  examId: integer("examId").notNull(),
+  academyId: integer("academyId").notNull(),
+  templateId: integer("templateId"), // Reference to certificate template
+  certificateNumber: text("certificateNumber").notNull().unique(),
   customizations: text("customizations"), // JSON string with any customizations
-  issueDate: timestamp("issue_date").notNull().defaultNow(),
-  createdAt: timestamp("created_at").defaultNow()
+  issueDate: timestamp("issuedAt").notNull().defaultNow(),
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Academy Exam Purchases
 export const examPurchases = pgTable("exam_purchases", {
   id: serial("id").primaryKey(),
-  academyId: integer("academy_id").notNull(),
-  examId: integer("exam_id").notNull(),
+  academyId: integer("academyId").notNull(),
+  examId: integer("examId").notNull(),
   quantity: integer("quantity").notNull().default(1), // Number of licenses purchased
-  usedQuantity: integer("used_quantity").notNull().default(0), // Number of licenses assigned
-  totalPrice: doublePrecision("total_price").notNull(), // Total price paid
-  purchaseDate: timestamp("purchase_date").notNull().defaultNow(),
+  usedQuantity: integer("usedQuantity").notNull().default(0), // Number of licenses assigned
+  totalPrice: doublePrecision("totalPrice").notNull(), // Total price paid
+  purchaseDate: timestamp("purchaseDate").notNull().defaultNow(),
   status: text("status").notNull().default("ACTIVE"), // ACTIVE, EXPIRED, CANCELED
-  expiryDate: timestamp("expiry_date"), // Optional expiry date
-  paymentId: text("payment_id"), // Reference to payment/transaction ID
-  createdAt: timestamp("created_at").defaultNow()
+  expiryDate: timestamp("expiryDate"), // Optional expiry date
+  paymentId: text("paymentId"), // Reference to payment/transaction ID
+  createdAt: timestamp("createdAt").defaultNow()
 });
 
 // Insert schemas
