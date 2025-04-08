@@ -443,21 +443,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   app.post("/api/exams", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== UserRole.SUPER_ADMIN) {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    
+    // Allow both SUPER_ADMIN and ACADEMY users to create exams
+    if (req.user.role !== UserRole.SUPER_ADMIN && req.user.role !== UserRole.ACADEMY) {
       return res.sendStatus(403);
     }
     
     try {
-      // Super Admin needs to specify an academyId in the request
-      const academyId = req.body.academyId;
-      if (!academyId) {
-        return res.status(400).json({ message: "Academy ID is required" });
-      }
+      let examData = { ...req.body };
       
-      // Check if the academy exists
-      const academy = await storage.getAcademy(academyId);
-      if (!academy) {
-        return res.status(404).json({ message: "Academy not found" });
+      // For ACADEMY users, set the academyId to their own academy
+      if (req.user.role === UserRole.ACADEMY) {
+        const academy = await storage.getAcademyByUserId(req.user.id);
+        if (!academy) {
+          return res.status(404).json({ message: "Academy not found for this user" });
+        }
+        examData.academyId = academy.id;
+      } 
+      // For SUPER_ADMIN, they need to specify an academyId unless it's for the marketplace
+      else if (req.user.role === UserRole.SUPER_ADMIN) {
+        const academyId = req.body.academyId;
+        if (!academyId) {
+          return res.status(400).json({ message: "Academy ID is required" });
+        }
+        
+        // Check if the academy exists
+        const academy = await storage.getAcademy(academyId);
+        if (!academy) {
+          return res.status(404).json({ message: "Academy not found" });
+        }
       }
       
       // Make sure price is specified for the exam
@@ -465,14 +482,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Exam price is required" });
       }
       
-      const examData = {
-        ...req.body,
-        academyId
-      };
+      // Ensure status is PUBLISHED for exams going to marketplace
+      if (!examData.status) {
+        examData.status = "PUBLISHED";
+      }
       
       const exam = await storage.createExam(examData);
       res.status(201).json(exam);
     } catch (error) {
+      console.error("Error creating exam:", error);
       res.status(400).json({ message: "Invalid exam data" });
     }
   });
