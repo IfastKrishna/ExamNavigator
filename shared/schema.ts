@@ -217,8 +217,10 @@ export const insertExamPurchaseSchema = createInsertSchema(examPurchases).pick({
   academyId: true,
   examId: true,
   quantity: true,
+  usedQuantity: true,
   totalPrice: true,
   status: true,
+  purchaseDate: true,
   expiryDate: true,
   paymentId: true
 });
