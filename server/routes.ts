@@ -206,7 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           availableExams.push({
             ...exam,
             academyName: academy.name,
-            academyLogo: academy.logo
+            academyLogo: academy.logo_url
           });
         }
       }
@@ -319,11 +319,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         examId: examToPurchase.id,
         quantity: purchaseQuantity,
         usedQuantity: 0,
-        pricePerUnit: examToPurchase.price,
         totalPrice: examToPurchase.price * purchaseQuantity,
         purchaseDate: new Date(),
-        status: "COMPLETED",
-        transactionId: nanoid(10)
+        status: "ACTIVE",
+        paymentId: `fake_payment_${Date.now()}`
       });
       
       res.status(201).json({ 
