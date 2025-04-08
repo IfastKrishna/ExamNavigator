@@ -26,11 +26,11 @@ export const academies = pgTable("academies", {
   userId: integer("userId").notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  logoUrl: text("logoUrl"),
+  logoUrl: text("logo_url"),
   website: text("website"),
   location: text("location"),
-  contactEmail: text("contactEmail"),
-  contactPhone: text("contactPhone"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
   createdAt: timestamp("createdAt").defaultNow()
 });
 
@@ -109,13 +109,11 @@ export const certificateTemplates = pgTable("certificate_templates", {
 export const certificates = pgTable("certificates", {
   id: serial("id").primaryKey(),
   enrollmentId: integer("enrollmentId").notNull().unique(),
-  studentId: integer("studentId").notNull(),
-  examId: integer("examId").notNull(),
-  academyId: integer("academyId").notNull(),
   templateId: integer("templateId"), // Reference to certificate template
-  certificateNumber: text("certificateNumber").notNull().unique(),
-  customizations: text("customizations"), // JSON string with any customizations
-  issueDate: timestamp("issuedAt").notNull().defaultNow(),
+  issuedAt: timestamp("issuedAt").notNull().defaultNow(),
+  expiresAt: timestamp("expiresAt"),
+  academyId: integer("academyId").notNull(),
+  studentId: integer("studentId").notNull(),
   createdAt: timestamp("createdAt").defaultNow()
 });
 
@@ -127,10 +125,9 @@ export const examPurchases = pgTable("exam_purchases", {
   quantity: integer("quantity").notNull().default(1), // Number of licenses purchased
   usedQuantity: integer("usedQuantity").notNull().default(0), // Number of licenses assigned
   totalPrice: doublePrecision("totalPrice").notNull(), // Total price paid
-  purchaseDate: timestamp("purchaseDate").notNull().defaultNow(),
   status: text("status").notNull().default("ACTIVE"), // ACTIVE, EXPIRED, CANCELED
-  expiryDate: timestamp("expiryDate"), // Optional expiry date
   paymentId: text("paymentId"), // Reference to payment/transaction ID
+  expiryDate: timestamp("expiryDate"), // Optional expiry date
   createdAt: timestamp("createdAt").defaultNow()
 });
 
@@ -192,11 +189,9 @@ export const insertCertificateTemplateSchema = createInsertSchema(certificateTem
 export const insertCertificateSchema = createInsertSchema(certificates).pick({
   enrollmentId: true,
   studentId: true,
-  examId: true,
   academyId: true,
   templateId: true,
-  certificateNumber: true,
-  customizations: true
+  expiresAt: true
 });
 
 // Update exam schema to include the new fields
@@ -222,7 +217,6 @@ export const insertExamPurchaseSchema = createInsertSchema(examPurchases).pick({
   usedQuantity: true,
   totalPrice: true,
   status: true,
-  purchaseDate: true,
   expiryDate: true,
   paymentId: true
 });
