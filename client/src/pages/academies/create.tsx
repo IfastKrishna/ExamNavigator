@@ -86,28 +86,43 @@ export default function CreateAcademyPage() {
   // Create academy and admin user mutation
   const createAcademyMutation = useMutation({
     mutationFn: async (data: CreateAcademyForm) => {
-      // First, create the admin user for the academy
-      const adminData = {
-        name: data.name, // Use academy name as the admin name
-        email: data.academyEmail,
-        username: data.academyUsername,
-        password: data.academyPassword,
-        role: UserRole.ACADEMY,
-      };
-      
-      const userRes = await apiRequest("POST", "/api/register", adminData);
-      const userData = await userRes.json();
-      
-      // Then create the academy with the new user ID
-      const academyData = {
-        name: data.name,
-        description: data.description,
-        status: data.status,
-        userId: userData.id, // Link the academy to the admin
-      };
-      
-      const academyRes = await apiRequest("POST", "/api/academies", academyData);
-      return await academyRes.json();
+      try {
+        // First, create the admin user for the academy
+        const adminData = {
+          name: data.name, // Use academy name as the admin name
+          email: data.academyEmail,
+          username: data.academyUsername,
+          password: data.academyPassword,
+          role: UserRole.ACADEMY,
+        };
+        
+        const userRes = await apiRequest("POST", "/api/register", adminData);
+        if (!userRes.ok) {
+          const errorData = await userRes.json();
+          throw new Error(errorData.message || "Failed to create academy user");
+        }
+        
+        const userData = await userRes.json();
+        
+        // Then create the academy with the new user ID
+        const academyData = {
+          name: data.name,
+          description: data.description,
+          status: data.status,
+          userId: userData.id, // Link the academy to the admin
+        };
+        
+        const academyRes = await apiRequest("POST", "/api/academies", academyData);
+        if (!academyRes.ok) {
+          const errorData = await academyRes.json();
+          throw new Error(errorData.message || "Failed to create academy");
+        }
+        
+        return await academyRes.json();
+      } catch (error) {
+        console.error("Academy creation error:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({
@@ -244,7 +259,10 @@ export default function CreateAcademyPage() {
                         onClick={() => {
                           // Validate academy fields before proceeding
                           form.trigger(["name", "description", "status"]).then((isValid) => {
-                            if (isValid) document.getElementById("admin-tab-trigger")?.click();
+                            if (isValid) {
+                              const tab = document.querySelector('[value="credentials"]') as HTMLElement;
+                              if (tab) tab.click();
+                            }
                           });
                         }}
                       >
@@ -320,7 +338,10 @@ export default function CreateAcademyPage() {
                       <Button 
                         type="button"
                         variant="outline" 
-                        onClick={() => document.getElementById("academy-tab-trigger")?.click()}
+                        onClick={() => {
+                          const tab = document.querySelector('[value="academy"]') as HTMLElement;
+                          if (tab) tab.click();
+                        }}
                       >
                         Back to Academy Info
                       </Button>
