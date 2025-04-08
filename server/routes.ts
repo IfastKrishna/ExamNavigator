@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { UserRole, Exam } from "@shared/schema";
 import { nanoid } from "nanoid";
-import * as stripeService from "./services/stripe-service";
+// Removed Stripe service import
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
@@ -1576,30 +1576,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Exam doesn't have a price" });
       }
       
-      // Create a checkout session
-      const session = await stripeService.createCheckoutSession({
-        lineItems: [
-          {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: exam.title,
-                description: exam.description || undefined,
-              },
-              unit_amount: exam.price * 100, // convert dollars to cents
-            },
-            quantity: 1,
-          },
-        ],
-        mode: "payment",
-        successUrl: `${req.headers.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${req.headers.origin}/payment/cancel`,
+      // Create a fake checkout session
+      const quantity = req.body.quantity || 1;
+      const sessionId = `${exam.id}_fake_${quantity}`;
+      const successUrl = `${req.headers.origin}/payment/success?session_id=${sessionId}`;
+      
+      // Create a mock session object
+      const session = {
+        id: sessionId,
+        url: successUrl, // Skip the payment step and go directly to success
         metadata: {
           examId: exam.id.toString(),
           academyId: exam.academyId.toString(),
-          buyerUserId: req.user.id.toString()
+          buyerUserId: req.user.id.toString(),
+          quantity: quantity.toString()
         }
-      });
+      };
       
       res.json({ url: session.url });
     } catch (error) {
@@ -1608,54 +1600,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Payment success webhook
-  app.post("/api/payment/webhook", async (req, res) => {
-    const signature = req.headers['stripe-signature'] as string;
-    
-    // In a production environment, you would have a webhook secret
-    // For now, we'll skip signature verification in development
+  // Fake payment processing
+  app.post("/api/payment/fake-process", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== UserRole.ACADEMY) {
+      return res.sendStatus(403);
+    }
     
     try {
-      const event = req.body;
+      const { clientSecret } = req.body;
       
-      if (event.type === 'payment_intent.succeeded') {
-        const paymentIntent = event.data.object;
-        const { examId, academyId, quantity = "1" } = paymentIntent.metadata;
-        const parsedQuantity = parseInt(quantity);
-        
-        // Process the successful payment
-        // Find the academy purchasing the exam
-        const academy = await storage.getAcademy(parseInt(academyId));
-        if (!academy) {
-          throw new Error("Academy not found");
-        }
-
-        // Get the exam to purchase
-        const examToPurchase = await storage.getExam(parseInt(examId));
-        if (!examToPurchase) {
-          throw new Error("Exam not found");
-        }
-        
-        // Calculate the total price
-        const totalPrice = examToPurchase.price * parsedQuantity;
-        
-        // Create an exam purchase record
-        await storage.createExamPurchase({
-          academyId: academy.id,
-          examId: examToPurchase.id,
-          quantity: parsedQuantity,
-          usedQuantity: 0, // Initially 0 licenses used
-          totalPrice: totalPrice,
-          status: "ACTIVE",
-          purchaseDate: new Date(),
-          paymentId: paymentIntent.id
-        });
-        
-        console.log(`Exam purchased successfully: ${examToPurchase.title} - ${parsedQuantity} licenses`);
+      if (!clientSecret || !clientSecret.includes('_fake_')) {
+        return res.status(400).json({ message: "Invalid payment information" });
       }
       
+      // Parse the fake client secret to get exam ID and quantity
+      const parts = clientSecret.split('_fake_');
+      const examId = parseInt(parts[0]);
+      const quantity = parseInt(parts[1] || '1');
+      
+      if (isNaN(examId) || isNaN(quantity) || quantity < 1) {
+        return res.status(400).json({ message: "Invalid payment information" });
+      }
+      
+      // Get the exam details
+      const exam = await storage.getExam(examId);
+      if (!exam) {
+        return res.status(404).json({ message: "Exam not found" });
+      }
+      
+      // Get the academy making the purchase
+      const academy = await storage.getAcademyByUserId(req.user.id);
+      if (!academy) {
+        return res.status(404).json({ message: "Academy not found" });
+      }
+      
+      // Calculate the total price
+      const totalPrice = exam.price * quantity;
+      
+      // Create the exam purchase record
+      await storage.createExamPurchase({
+        academyId: academy.id,
+        examId: exam.id,
+        quantity: quantity,
+        usedQuantity: 0, // Initially 0 licenses used
+        totalPrice: totalPrice,
+        status: "ACTIVE",
+        purchaseDate: new Date(),
+        paymentId: `payment_${Date.now()}`
+      });
+      
+      console.log(`Exam purchased successfully: ${exam.title} - ${quantity} licenses`);
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Fake payment processing error:', error);
+      res.status(400).json({ message: error.message || "Error processing payment" });
+    }
+  });
+  
+  // Payment success webhook
+  app.post("/api/payment/webhook", async (req, res) => {
+    try {
+      const paymentData = req.body;
+      
+      // Process the payment notification
+      const { examId, academyId, quantity = "1" } = paymentData.metadata || {};
+      const parsedQuantity = parseInt(quantity);
+      
+      // Process the successful payment
+      // Find the academy purchasing the exam
+      const academy = await storage.getAcademy(parseInt(academyId));
+      if (!academy) {
+        throw new Error("Academy not found");
+      }
+
+      // Get the exam to purchase
+      const examToPurchase = await storage.getExam(parseInt(examId));
+      if (!examToPurchase) {
+        throw new Error("Exam not found");
+      }
+      
+      // Calculate the total price
+      const totalPrice = examToPurchase.price * parsedQuantity;
+      
+      // Create an exam purchase record
+      await storage.createExamPurchase({
+        academyId: academy.id,
+        examId: examToPurchase.id,
+        quantity: parsedQuantity,
+        usedQuantity: 0, // Initially 0 licenses used
+        totalPrice: totalPrice,
+        status: "ACTIVE",
+        purchaseDate: new Date(),
+        paymentId: paymentData.id || `payment_${Date.now()}`
+      });
+      
+      console.log(`Exam purchased successfully: ${examToPurchase.title} - ${parsedQuantity} licenses`);
+      
       res.json({ received: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Webhook error:', error);
       res.status(400).send(`Webhook Error: ${error.message}`);
     }
@@ -1669,12 +1712,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const { sessionId } = req.params;
-      const session = await stripeService.retrieveCheckoutSession(sessionId);
+      
+      // Parse session ID to get exam ID if using our fake format
+      let examId = null;
+      let quantity = 1;
+      
+      if (sessionId.includes('_fake_')) {
+        const parts = sessionId.split('_fake_');
+        examId = parseInt(parts[0]);
+        quantity = parseInt(parts[1] || '1');
+      }
+      
+      // Create a mock session object similar to what we'd get from a payment processor
+      const session = {
+        id: sessionId,
+        payment_status: 'paid',
+        amount_total: 0, // Will be populated if exam found
+        metadata: {
+          examId: examId,
+          academyId: req.user.id
+        }
+      };
+      
+      // If we have an exam ID, get the exam details for more accurate information
+      if (examId) {
+        const exam = await storage.getExam(examId);
+        if (exam) {
+          session.amount_total = exam.price * quantity * 100; // Convert to cents
+        }
+      }
       
       res.json({ session });
     } catch (error) {
-      console.error("Error retrieving checkout session:", error);
-      res.status(500).json({ message: "Error retrieving checkout session" });
+      console.error("Error retrieving payment session:", error);
+      res.status(500).json({ message: "Error retrieving payment session" });
     }
   });
 

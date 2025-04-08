@@ -1,14 +1,6 @@
-import Stripe from 'stripe';
-
-// Check for required environment variable
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.error('Missing required Stripe secret key: STRIPE_SECRET_KEY');
-}
-
-// Initialize Stripe with API key
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2025-02-24.acacia',
-});
+// NOTE: This file is no longer directly used by the application.
+// All payment processing has been moved to direct implementations in the routes.ts file.
+// The interfaces are kept for documentation purposes only.
 
 export interface CreatePaymentIntentOptions {
   amount: number; // amount in cents (e.g., 2000 for $20.00)
@@ -36,97 +28,62 @@ export interface CreateCheckoutSessionOptions {
 }
 
 /**
- * Create a PaymentIntent for a payment
+ * Mock implementation that mimics payment intent creation
  */
 export async function createPaymentIntent(options: CreatePaymentIntentOptions) {
-  try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: options.amount,
-      currency: options.currency,
-      description: options.description,
-      metadata: options.metadata,
-    });
-    
-    return paymentIntent;
-  } catch (error) {
-    console.error('Error creating payment intent:', error);
-    throw error;
-  }
+  return {
+    id: `pi_${Date.now()}`,
+    client_secret: `pi_${Date.now()}_secret_${Math.random().toString(36).substring(2, 10)}`,
+    amount: options.amount,
+    currency: options.currency,
+    status: 'succeeded'
+  };
 }
 
 /**
- * Create a Checkout Session for a payment
+ * Mock implementation that mimics checkout session creation
  */
 export async function createCheckoutSession(options: CreateCheckoutSessionOptions) {
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: options.lineItems,
-      mode: options.mode,
-      success_url: options.successUrl,
-      cancel_url: options.cancelUrl,
-      metadata: options.metadata,
-    });
-    
-    return session;
-  } catch (error) {
-    console.error('Error creating checkout session:', error);
-    throw error;
-  }
+  return {
+    id: `cs_${Date.now()}`,
+    url: options.successUrl, // Just redirect to success URL directly
+    status: 'succeeded'
+  };
 }
 
 /**
- * Retrieve a payment intent by ID
+ * Mock implementation that mimics payment intent retrieval
  */
 export async function retrievePaymentIntent(paymentIntentId: string) {
-  try {
-    return await stripe.paymentIntents.retrieve(paymentIntentId);
-  } catch (error) {
-    console.error('Error retrieving payment intent:', error);
-    throw error;
-  }
+  return {
+    id: paymentIntentId,
+    status: 'succeeded'
+  };
 }
 
 /**
- * Retrieve a checkout session by ID
+ * Mock implementation that mimics checkout session retrieval
  */
 export async function retrieveCheckoutSession(sessionId: string) {
-  try {
-    return await stripe.checkout.sessions.retrieve(sessionId);
-  } catch (error) {
-    console.error('Error retrieving checkout session:', error);
-    throw error;
-  }
+  return {
+    id: sessionId,
+    status: 'complete',
+    payment_status: 'paid'
+  };
 }
 
 /**
- * Process a webhook event from Stripe
+ * Mock implementation that mimics webhook event processing
  */
 export async function handleWebhookEvent(rawBody: string, signature: string, endpointSecret: string) {
-  try {
-    const event = stripe.webhooks.constructEvent(rawBody, signature, endpointSecret);
-    
-    // Handle different event types
-    switch (event.type) {
-      case 'payment_intent.succeeded':
-        // Handle successful payment
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        console.log(`Payment succeeded: ${paymentIntent.id}`);
-        break;
-        
-      case 'checkout.session.completed':
-        // Handle completed checkout session
-        const session = event.data.object as Stripe.Checkout.Session;
-        console.log(`Checkout completed: ${session.id}`);
-        break;
-        
-      default:
-        console.log(`Unhandled event type: ${event.type}`);
+  return {
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: `cs_${Date.now()}`,
+        status: 'complete',
+        payment_status: 'paid'
+      }
     }
-    
-    return event;
-  } catch (error) {
-    console.error('Error processing webhook event:', error);
-    throw error;
-  }
+  };
 }
