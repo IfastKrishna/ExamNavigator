@@ -106,10 +106,9 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
   // Check if user is Super Admin
   const isSuperAdmin = user?.role === UserRole.SUPER_ADMIN;
   
-  // Fetch academies for Super Admin to select from
+  // Fetch academies data for user context
   const { data: academies = [] } = useQuery<Academy[]>({
     queryKey: ["/api/academies"],
-    enabled: isSuperAdmin,
   });
 
   // Form for the exam details
@@ -229,22 +228,19 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
       return;
     }
     
-    // For Super Admin, ensure an academy is selected
-    if (isSuperAdmin && !data.academyId) {
-      toast({
-        title: "Academy Required",
-        description: "Please select an academy for this exam.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // For non-Super Admin users, get their academy data
+    // Prepare data for submission
     let finalData = data;
     
-    if (!isSuperAdmin && user?.role === UserRole.ACADEMY) {
+    // Always set status to PUBLISHED for exams going to marketplace
+    if (!examId) {
+      // For new exams, set status to PUBLISHED automatically
+      finalData = { ...data, status: "PUBLISHED" };
+    }
+    
+    // For Academy users, get their academy data
+    if (user?.role === UserRole.ACADEMY) {
       const academy = academies.find(a => a.userId === user.id);
-      finalData = { ...data, academyId: academy?.id || 0 };
+      finalData = { ...finalData, academyId: academy?.id || 0 };
     }
     
     if (examId) {
@@ -577,40 +573,7 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
                     </div>
                   </div>
 
-                  {isSuperAdmin && (
-                    <div className="pt-2">
-                      <FormField
-                        control={form.control}
-                        name="academyId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Academy</FormLabel>
-                            <Select 
-                              onValueChange={(value) => field.onChange(parseInt(value))} 
-                              defaultValue={field.value ? field.value.toString() : undefined}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select academy" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {academies.map((academy) => (
-                                  <SelectItem key={academy.id} value={academy.id.toString()}>
-                                    {academy.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>
-                              Select the academy this exam will be assigned to
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  )}
+                  {/* Academy selection removed as all exams now go directly to the marketplace */}
                   
                   <div className="flex items-center justify-between pt-4">
                     <Button 

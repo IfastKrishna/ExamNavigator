@@ -230,14 +230,23 @@ export default function AssignStudentsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog 
+      open={open} 
+      onOpenChange={(newOpen) => {
+        setOpen(newOpen);
+        if (!newOpen) {
+          setSelectedStudents([]);
+          setSearchQuery("");
+        }
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="ml-auto">
           <UserPlus className="mr-2 h-4 w-4" />
           Assign Students
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[800px]">
+      <DialogContent className="sm:max-w-[800px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Assign Students to Exam</DialogTitle>
           <DialogDescription>
