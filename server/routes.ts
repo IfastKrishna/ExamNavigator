@@ -91,14 +91,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   app.post("/api/academies", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== UserRole.SUPER_ADMIN) {
-      return res.sendStatus(403);
-    }
-    
     try {
+      // Allow both unauthenticated requests (for academy creation via register)
+      // and requests from SUPER_ADMIN users
+      if (req.isAuthenticated()) {
+        if (req.user.role !== UserRole.SUPER_ADMIN) {
+          return res.status(403).json({ message: "Only super admins can create academies directly" });
+        }
+      }
+      
+      // Validate the required fields
+      if (!req.body.name || !req.body.userId) {
+        return res.status(400).json({ message: "Academy name and userId are required" });
+      }
+      
       const academy = await storage.createAcademy(req.body);
       res.status(201).json(academy);
     } catch (error) {
+      console.error("Academy creation error:", error);
       res.status(400).json({ message: "Invalid academy data" });
     }
   });

@@ -32,7 +32,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -42,7 +41,7 @@ import {
   TabsList, 
   TabsTrigger 
 } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Building2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
 
 // Define the form schema for creating academy with credentials
@@ -61,7 +60,7 @@ export default function CreateAcademyPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [isCreatingAdmin, setIsCreatingAdmin] = useState(true);
+  const [activeTab, setActiveTab] = useState<"academy" | "credentials">("academy");
 
   // Redirect if not Super Admin
   useEffect(() => {
@@ -112,14 +111,23 @@ export default function CreateAcademyPage() {
           userId: userData.id, // Link the academy to the admin
         };
         
-        const academyRes = await apiRequest("POST", "/api/academies", academyData);
+        // Include authorization headers for this request
+        const academyRes = await fetch("/api/academies", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(academyData),
+          credentials: "include" // This is critical for sending cookies!
+        });
+        
         if (!academyRes.ok) {
           const errorData = await academyRes.json();
           throw new Error(errorData.message || "Failed to create academy");
         }
         
         return await academyRes.json();
-      } catch (error) {
+      } catch (error: any) {
         console.error("Academy creation error:", error);
         throw error;
       }
@@ -132,7 +140,7 @@ export default function CreateAcademyPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/academies"] });
       setLocation("/academies");
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({
         title: "Failed to create academy",
         description: error.message,
@@ -143,6 +151,26 @@ export default function CreateAcademyPage() {
 
   const onSubmit = (data: CreateAcademyForm) => {
     createAcademyMutation.mutate(data);
+  };
+
+  // Handle tab changes
+  const handleTabChange = (value: string) => {
+    if (value === "academy" || value === "credentials") {
+      setActiveTab(value);
+    }
+  };
+
+  // Go to next tab after validation
+  const goToNextTab = async () => {
+    const isValid = await form.trigger(["name", "description", "status"]);
+    if (isValid) {
+      setActiveTab("credentials");
+    }
+  };
+
+  // Go back to previous tab
+  const goToPreviousTab = () => {
+    setActiveTab("academy");
   };
 
   if (!user || user.role !== UserRole.SUPER_ADMIN) {
@@ -169,20 +197,12 @@ export default function CreateAcademyPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="academy" className="w-full">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger 
-                value="academy" 
-                onClick={() => setIsCreatingAdmin(true)}
-                id="academy-tab-trigger"
-              >
+              <TabsTrigger value="academy">
                 Academy Information
               </TabsTrigger>
-              <TabsTrigger 
-                value="credentials" 
-                onClick={() => setIsCreatingAdmin(false)}
-                id="admin-tab-trigger"
-              >
+              <TabsTrigger value="credentials">
                 Academy Credentials
               </TabsTrigger>
             </TabsList>
@@ -256,15 +276,7 @@ export default function CreateAcademyPage() {
                     <div className="flex justify-end mt-6">
                       <Button 
                         type="button" 
-                        onClick={() => {
-                          // Validate academy fields before proceeding
-                          form.trigger(["name", "description", "status"]).then((isValid) => {
-                            if (isValid) {
-                              const tab = document.querySelector('[value="credentials"]') as HTMLElement;
-                              if (tab) tab.click();
-                            }
-                          });
-                        }}
+                        onClick={goToNextTab}
                       >
                         Next: Academy Credentials
                       </Button>
@@ -338,10 +350,7 @@ export default function CreateAcademyPage() {
                       <Button 
                         type="button"
                         variant="outline" 
-                        onClick={() => {
-                          const tab = document.querySelector('[value="academy"]') as HTMLElement;
-                          if (tab) tab.click();
-                        }}
+                        onClick={goToPreviousTab}
                       >
                         Back to Academy Info
                       </Button>
