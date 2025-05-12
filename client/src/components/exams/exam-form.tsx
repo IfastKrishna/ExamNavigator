@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { insertExamSchema, insertQuestionSchema, UserRole, type Academy } from "@shared/schema";
+import { insertExamSchema, insertQuestionSchema, questionWithOptionsSchema, UserRole, type Academy } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -58,6 +58,11 @@ import {
 } from "@/components/ui/tabs";
 import { Loader2, X, Plus, Trash2, Save, ArrowLeft, AlertTriangle, Eye, Clock, GripVertical, FileText, Calendar, LayoutGrid, Settings, Check } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { 
+  useCreateExamMutation, 
+  useUpdateExamMutation,
+  useAcademiesQuery
+} from "@/lib/api";
 
 // Extend the exam schema for the form
 const examFormSchema = insertExamSchema.extend({
@@ -71,25 +76,15 @@ const examFormSchema = insertExamSchema.extend({
   examTime: z.string().optional().nullable(),
 });
 
-// Schema for question with options
-const questionWithOptionsSchema = insertQuestionSchema.extend({
-  text: z.string().min(5, "Question text must be at least 5 characters"),
-  type: z.enum(["MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"]),
-  points: z.coerce.number().min(1, "Points must be at least 1"),
-  options: z.array(
-    z.object({
-      text: z.string().min(1, "Option text is required"),
-      isCorrect: z.boolean().default(false),
-    })
-  ).optional(),
-});
+// Using the shared schema for questions with options from @shared/schema
 
 type ExamFormProps = {
   examId?: number;
   defaultValues?: z.infer<typeof examFormSchema>;
+  initialQuestions?: z.infer<typeof questionWithOptionsSchema>[];
 };
 
-export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
+export default function ExamForm({ examId, defaultValues, initialQuestions = [] }: ExamFormProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -107,9 +102,14 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
   const isSuperAdmin = user?.role === UserRole.SUPER_ADMIN;
   
   // Fetch academies data for user context
-  const { data: academies = [] } = useQuery<Academy[]>({
-    queryKey: ["/api/academies"],
-  });
+  const { data: academies = [] } = useAcademiesQuery();
+
+  // Load initial questions when the component mounts
+  useEffect(() => {
+    if (initialQuestions && initialQuestions.length > 0) {
+      setQuestions(initialQuestions);
+    }
+  }, [initialQuestions]);
 
   // Form for the exam details
   const form = useForm<z.infer<typeof examFormSchema>>({
@@ -121,7 +121,6 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
       passingScore: 70,
       price: 0,
       status: "DRAFT",
-      academyId: 0, // This will be set by the server based on the logged-in user
       examDate: null,
       examTime: null,
     },
@@ -134,7 +133,7 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
       text: "",
       type: "MULTIPLE_CHOICE",
       points: 1,
-      examId: 0, // This will be set later
+      examId: examId || 0,
       options: [
         { text: "", isCorrect: false },
         { text: "", isCorrect: false },
@@ -151,76 +150,44 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
   });
 
   // Initialize time inputs from form duration
-  useState(() => {
+  useEffect(() => {
     const duration = form.getValues("duration") || 60;
     setTimeHours(Math.floor(duration / 60));
     setTimeMinutes(duration % 60);
-  });
+  }, [form.getValues("duration")]);
 
   // Calculate total exam points
   const totalPoints = questions.reduce((total, q) => total + (q.points || 0), 0);
 
   // Create exam mutation
-  const createExamMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof examFormSchema>) => {
-      const res = await apiRequest("POST", "/api/exams", data);
-      return await res.json();
-    },
-    onSuccess: (createdExam) => {
-      // Add questions if any
-      if (questions.length > 0) {
-        questions.forEach(async (question) => {
-          const questionData = {
-            ...question,
-            examId: createdExam.id,
-          };
-          
-          try {
-            await apiRequest("POST", `/api/exams/${createdExam.id}/questions`, questionData);
-          } catch (error) {
-            console.error("Failed to add question:", error);
-          }
-        });
+  const createExamMutation = useCreateExamMutation();
+  
+  // Custom success handler for create exam
+  const handleExamCreated = async (createdExam: any) => {
+    // Add questions if any
+    if (questions.length > 0 && createdExam?.id) {
+      try {
+        const { batchUpdateExamQuestions } = await import('@/lib/api/questions');
+        // Set examId for all questions
+        const questionsWithExamId = questions.map(q => ({
+          ...q,
+          examId: createdExam.id
+        }));
+        await batchUpdateExamQuestions(createdExam.id, questionsWithExamId);
+      } catch (error) {
+        console.error("Failed to add questions:", error);
       }
-      
-      toast({
-        title: "Exam Created",
-        description: "Your exam has been created successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/exams"] });
-      setLocation("/exams");
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to create exam",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+    }
+    
+    toast({
+      title: "Exam Created",
+      description: "Your exam has been created successfully.",
+    });
+    setLocation("/exams");
+  };
 
   // Update exam mutation
-  const updateExamMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof examFormSchema>) => {
-      const res = await apiRequest("PUT", `/api/exams/${examId}`, data);
-      return await res.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Exam Updated",
-        description: "Your exam has been updated successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/exams"] });
-      setLocation("/exams");
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to update exam",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  const updateExamMutation = useUpdateExamMutation(examId ?? 0);
 
   const handleSubmit = (data: z.infer<typeof examFormSchema>) => {
     if (questions.length === 0) {
@@ -230,23 +197,42 @@ export default function ExamForm({ examId, defaultValues }: ExamFormProps) {
     
     // Prepare data for submission
     let finalData = data;
-    
-    // Always set status to PUBLISHED for exams going to marketplace
-    if (!examId) {
-      // For new exams, set status to PUBLISHED automatically
-      finalData = { ...data, status: "PUBLISHED" };
-    }
-    
-    // For Academy users, get their academy data
-    if (user?.role === UserRole.ACADEMY) {
-      const academy = academies.find(a => a.userId === user.id);
-      finalData = { ...finalData, academyId: academy?.id || 0 };
-    }
-    
+
     if (examId) {
-      updateExamMutation.mutate(finalData);
+      updateExamMutation.mutate(finalData, {
+        onSuccess: async (updatedExam) => {
+          // Handle question updates
+          if (questions.length > 0) {
+            try {
+              const { batchUpdateExamQuestions } = await import('@/lib/api/questions');
+              // Set examId for all questions
+              const questionsWithExamId = questions.map(q => ({
+                ...q,
+                examId: examId
+              }));
+              await batchUpdateExamQuestions(examId, questionsWithExamId);
+              
+              toast({
+                title: "Exam Updated",
+                description: "Your exam has been updated successfully.",
+              });
+              setLocation("/exams");
+            } catch (error) {
+              console.error("Failed to update questions:", error);
+            }
+          } else {
+            toast({
+              title: "Exam Updated",
+              description: "Your exam has been updated successfully.",
+            });
+            setLocation("/exams");
+          }
+        }
+      });
     } else {
-      createExamMutation.mutate(finalData);
+      createExamMutation.mutate(finalData, {
+        onSuccess: handleExamCreated
+      });
     }
   };
 

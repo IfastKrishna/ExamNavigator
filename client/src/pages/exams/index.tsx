@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { UserRole, type Exam, type Academy } from "@shared/schema";
 import MainLayout from "@/components/layouts/main-layout";
+import { useExamsQuery } from "@/lib/api/exams";
+import { useEnrollmentsQuery, useEnrollExamMutation, useStartExamMutation } from "@/lib/api/enrollments";
+import { usePurchaseExamMutation } from "@/lib/api/exams";
 import {
   Table,
   TableBody,
@@ -25,106 +27,113 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Loader2, Plus, Eye, Edit, MoreHorizontal, Play, BookOpen, ShoppingCart } from "lucide-react";
-import AssignStudentsDialog from "@/components/exams/assign-students-dialog";
+import { AssignStudentsDialog } from "@/components/exams/AssignStudentsDialog";
 import { formatCurrency } from "@/lib/utils";
 
 export default function ExamsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState(user?.role === UserRole.STUDENT ? "available" : "all");
+  const [activeTab, setActiveTab] = useState(user?.role === UserRole.STUDENT ? "assigned" : "all");
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedExamForAssignment, setSelectedExamForAssignment] = useState<Exam | null>(null);
 
   // Fetch exams
-  const { data: exams = [], isLoading: isLoadingExams } = useQuery<Exam[]>({
-    queryKey: ["/api/exams"],
-  });
-
-  // Fetch academies
-  const { data: academies = [], isLoading: isLoadingAcademies } = useQuery<Academy[]>({
-    queryKey: ["/api/academies"],
-  });
+  const { data: exams = [], isLoading: isLoadingExams } = useExamsQuery();
 
   // Fetch enrollments for students
-  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useQuery<any[]>({
-    queryKey: ["/api/enrollments"],
-    enabled: user?.role === UserRole.STUDENT,
-  });
+  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useEnrollmentsQuery();
 
   // Start exam mutation for students
-  const startExamMutation = useMutation({
-    mutationFn: async (enrollmentId: number) => {
-      const res = await apiRequest("PUT", `/api/enrollments/${enrollmentId}/start`, {});
-      return await res.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Exam Started",
-        description: "You can now begin your exam.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/enrollments"] });
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to start exam",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  const startExamMutation = useStartExamMutation();
 
-  // Enroll in exam mutation for students
-  const enrollExamMutation = useMutation({
-    mutationFn: async (examId: number) => {
-      const res = await apiRequest("POST", "/api/enrollments", { examId });
-      return await res.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Enrollment Successful",
-        description: "You have successfully enrolled in the exam.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/enrollments"] });
-    },
-    onError: (error) => {
-      toast({
-        title: "Enrollment Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  // Add success/error handlers
+  const handleStartSuccess = () => {
+    toast({
+      title: "Exam Started",
+      description: "You can now begin your exam.",
+    });
+  };
+
+  const handleStartError = (error: Error) => {
+    toast({
+      title: "Failed to start exam",
+      description: error.message,
+      variant: "destructive",
+    });
+  };
+
+  // Student self-enrollment mutation
+  const enrollExamMutation = useEnrollExamMutation();
+
+  // Add success/error handlers
+  const handleEnrollSuccess = () => {
+    toast({
+      title: "Enrollment Successful",
+      description: "You have successfully enrolled in this exam.",
+    });
+  };
+
+  const handleEnrollError = (error: Error) => {
+    toast({
+      title: "Enrollment Failed",
+      description: error.message,
+      variant: "destructive",
+    });
+  };
+
+  // Get enrollment for a given exam
+  const getEnrollmentForExam = (examId: number) => {
+    return enrollments.find(e => e.examId === examId);
+  };
+  
+  // Purchase exam mutation for academies 
+  const purchaseExamMutation = usePurchaseExamMutation();
+
+  // Add success handler for purchase
+  const handlePurchaseSuccess = (data: any) => {
+    toast({
+      title: "Exam Purchased",
+      description: data.message || "You have successfully purchased this exam",
+    });
+  };
+
+  // Add error handler for purchase
+  const handlePurchaseError = (error: Error) => {
+    toast({
+      title: "Purchase Failed",
+      description: error.message,
+      variant: "destructive",
+    });
+  };
 
   // Filter and process exams based on user role and active tab
   const getProcessedExams = () => {
-    // Add academy name to exams
+    // Add academy name and additional info to exams
     const examsWithAcademyNames = exams.map(exam => {
-      const academy = academies.find(a => a.id === exam.academyId);
       return {
         ...exam,
-        academyName: academy?.name || "Unknown Academy",
-        studentsCount: 78, // This would come from a real API
-        passRate: 85, // This would come from a real API
+        studentsCount: exam.studentsCount || 0, 
+        passRate: exam.passRate || 85,
+        availableQuantity: exam.availableQuantity || 0,
+        purchased: !!exam.purchased
       };
     });
 
     if (user?.role === UserRole.STUDENT) {
-      const enrolledExamIds = enrollments.map(e => e.examId);
-      
-      if (activeTab === "available") {
-        return examsWithAcademyNames.filter(exam => 
-          exam.status === "PUBLISHED" && 
-          !enrolledExamIds.includes(exam.id)
-        );
-      } else if (activeTab === "enrolled") {
-        return examsWithAcademyNames.filter(exam => 
-          enrolledExamIds.includes(exam.id)
-        );
-      }
+      // For students, show exams that have been assigned to them
+      return examsWithAcademyNames;
     } else if (user?.role === UserRole.ACADEMY) {
-      if (activeTab === "published") {
-        return examsWithAcademyNames.filter(exam => exam.status === "PUBLISHED");
-      } else if (activeTab === "draft") {
-        return examsWithAcademyNames.filter(exam => exam.status === "DRAFT");
+      if (activeTab === "purchased") {
+        // Show only purchased exams with remaining quantity
+        return examsWithAcademyNames.filter(exam => 
+          exam.purchased && exam.availableQuantity > 0
+        );
+      } else if (activeTab === "owned") {
+        // Show exams created by this academy
+        return examsWithAcademyNames.filter(exam => 
+          exam.academyId === user.academyId
+        );
       }
     }
     
@@ -137,12 +146,13 @@ export default function ExamsPage() {
   // Determine if user can enroll in exams (student users only)
   const canEnrollInExam = user?.role === UserRole.STUDENT;
 
-  // Get enrollment for a given exam
-  const getEnrollmentForExam = (examId: number) => {
-    return enrollments.find(e => e.examId === examId);
+  // Function to assign an exam to students
+  const handleAssignExam = (exam: Exam) => {
+    setSelectedExamForAssignment(exam);
+    setShowAssignDialog(true);
   };
 
-  if (isLoadingExams || isLoadingAcademies || isLoadingEnrollments) {
+  if (isLoadingExams  || isLoadingEnrollments) {
     return (
       <MainLayout title="Exams" subtitle="Manage and view all exams">
         <div className="flex justify-center items-center h-64">
@@ -162,27 +172,31 @@ export default function ExamsPage() {
             {user?.role === UserRole.STUDENT && (
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>
-                  <TabsTrigger value="available">Available Exams</TabsTrigger>
-                  <TabsTrigger value="enrolled">My Enrolled Exams</TabsTrigger>
+                  <TabsTrigger value="assigned">Assigned Exams</TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
             {user?.role === UserRole.ACADEMY && (
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>
-                  <TabsTrigger value="all">All Exams</TabsTrigger>
-                  <TabsTrigger value="published">Published</TabsTrigger>
-                  <TabsTrigger value="draft">Drafts</TabsTrigger>
+                  <TabsTrigger value="purchased">Purchased Exams</TabsTrigger>
+                  <TabsTrigger value="owned">My Exams</TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
           </div>
           <div className="flex gap-2">
             {user?.role === UserRole.ACADEMY && (
-              <Button variant="outline" onClick={() => setLocation("/available-exams")}>
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                Marketplace
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => setLocation("/available-exams")}>
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Marketplace
+                </Button>
+                <Button variant="outline" onClick={() => setLocation("/purchases")}>
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  My Licenses
+                </Button>
+              </>
             )}
             {canCreateExam && (
               <Button onClick={() => setLocation("/exams/create")}>
@@ -215,9 +229,6 @@ export default function ExamsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Title</TableHead>
-                    {(user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.STUDENT) && (
-                      <TableHead>Academy</TableHead>
-                    )}
                     <TableHead>Duration</TableHead>
                     <TableHead>Price</TableHead>
                     {user?.role !== UserRole.STUDENT && (
@@ -244,9 +255,6 @@ export default function ExamsPage() {
                             </div>
                           )}
                         </TableCell>
-                        {(user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.STUDENT) && (
-                          <TableCell>{exam.academyName}</TableCell>
-                        )}
                         <TableCell>{exam.duration} minutes</TableCell>
                         <TableCell>{formatCurrency(exam.price)}</TableCell>
                         {user?.role !== UserRole.STUDENT && (
@@ -290,7 +298,10 @@ export default function ExamsPage() {
                             <Button 
                               variant="secondary" 
                               size="sm"
-                              onClick={() => enrollExamMutation.mutate(exam.id)}
+                              onClick={() => enrollExamMutation.mutate(exam.id, {
+                                onSuccess: handleEnrollSuccess,
+                                onError: handleEnrollError
+                              })}
                               disabled={enrollExamMutation.isPending}
                             >
                               {enrollExamMutation.isPending ? (
@@ -305,7 +316,10 @@ export default function ExamsPage() {
                             <Button 
                               variant="default" 
                               size="sm"
-                              onClick={() => startExamMutation.mutate(enrollment.id)}
+                              onClick={() => startExamMutation.mutate(enrollment.id, {
+                                onSuccess: handleStartSuccess,
+                                onError: handleStartError
+                              })}
                               disabled={startExamMutation.isPending}
                             >
                               {startExamMutation.isPending ? (
@@ -348,19 +362,29 @@ export default function ExamsPage() {
                                   </DropdownMenuItem>
                                 )}
                                 
-                                {/* Academy users can only edit their exams */}
+                                {/* Academy users can only edit their own exams */}
+                                {user?.role === UserRole.ACADEMY && exam.academyId === user.academyId && (
+                                  <DropdownMenuItem onClick={() => setLocation(`/exams/${exam.id}/edit`)}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+                                
+                                {/* Academy users can assign students to purchased or owned exams */}
                                 {user?.role === UserRole.ACADEMY && (
-                                  <>
-                                    <DropdownMenuItem onClick={() => setLocation(`/exams/${exam.id}/edit`)}>
-                                      <Edit className="h-4 w-4 mr-2" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild>
-                                      <div>
-                                        <AssignStudentsDialog examId={exam.id} examTitle={exam.title} />
+                                  exam.purchased ? (
+                                    <DropdownMenuItem onClick={() => handleAssignExam(exam)}>
+                                      <div className="flex items-center">
+                                        <BookOpen className="h-4 w-4 mr-2" />
+                                        Assign ({exam.availableQuantity} left)
                                       </div>
                                     </DropdownMenuItem>
-                                  </>
+                                  ) : exam.academyId === user.academyId && (
+                                    <DropdownMenuItem onClick={() => handleAssignExam(exam)}>
+                                      <BookOpen className="h-4 w-4 mr-2" />
+                                      Assign Students
+                                    </DropdownMenuItem>
+                                  )
                                 )}
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -375,6 +399,18 @@ export default function ExamsPage() {
           )}
         </CardContent>
       </Card>
+
+      {showAssignDialog && selectedExamForAssignment && (
+        <AssignStudentsDialog
+          open={showAssignDialog}
+          onOpenChange={(open) => setShowAssignDialog(open)}
+          exam={selectedExamForAssignment}
+          onAssigned={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/exams"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/enrollments"] });
+          }}
+        />
+      )}
     </MainLayout>
   );
 }

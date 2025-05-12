@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { UserRole } from '@shared/schema';
+import { useAvailableExamsQuery } from '@/lib/api/exams';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ShoppingCart, AlertTriangle, MoreHorizontal, Tag } from 'lucide-react';
@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import MainLayout from '@/components/layouts/main-layout';
 
 export default function AvailableExams() {
   const { user } = useAuth();
@@ -28,10 +29,7 @@ export default function AvailableExams() {
     data: exams = [],
     isLoading,
     error,
-  } = useQuery<any[]>({
-    queryKey: ['/api/available-exams'],
-    enabled: user?.role === UserRole.ACADEMY,
-  });
+  } = useAvailableExamsQuery();
 
   if (user?.role !== UserRole.ACADEMY) {
     return (
@@ -60,14 +58,11 @@ export default function AvailableExams() {
   };
 
   return (
-    <div className="container py-6">
+    <MainLayout title='Exam Marketplace' subtitle='Browse and purchase exams'>
+
+    <div className="">
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Exam Marketplace</h1>
-          <p className="text-muted-foreground mt-1">
-            Browse and purchase exams from other academies
-          </p>
-        </div>
+   
         <Button
           variant="outline"
           size="sm"
@@ -183,5 +178,6 @@ export default function AvailableExams() {
         </DialogContent>
       </Dialog>
     </div>
+    </MainLayout>
   );
 }

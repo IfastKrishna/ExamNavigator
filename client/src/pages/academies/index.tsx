@@ -160,7 +160,7 @@ export default function AcademiesPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" onClick={() => setLocation(`/academies/${academy.id}`)}>
                           <EyeIcon className="h-4 w-4 text-primary dark:text-accent" />
                         </Button>
                       </TableCell>

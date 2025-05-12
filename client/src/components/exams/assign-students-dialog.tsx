@@ -1,132 +1,190 @@
 import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { UserRole } from "@shared/schema";
+
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Loader2, Search, UserPlus, XCircle } from "lucide-react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { User, UserRole } from "@shared/schema";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-interface AssignStudentsDialogProps {
-  examId: number;
-  examTitle: string;
-}
+type AssignStudentsDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  exam: any;
+  onAssigned?: () => void;
+};
 
-interface ExamPurchaseInfo {
-  canAssign: boolean;
-  remainingQuantity: number;
-  purchase?: {
-    id: number;
-    quantity: number;
-    usedQuantity: number;
-  };
-  message?: string;
-}
-
-export default function AssignStudentsDialog({
-  examId,
-  examTitle,
+export function AssignStudentsDialog({
+  open,
+  onOpenChange,
+  exam,
+  onAssigned,
 }: AssignStudentsDialogProps) {
-  const [open, setOpen] = useState(false);
-  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuth();
   const { toast } = useToast();
+  const [selectedStudent, setSelectedStudent] = useState<string>("");
+  const [isAssigningMultiple, setIsAssigningMultiple] = useState(false);
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
 
-  // Get students
-  const { data: students = [], isLoading: loadingStudents } = useQuery<User[]>({
+  // Fetch students data
+  const { data: students = [], isLoading: isLoadingStudents } = useQuery({
     queryKey: ["/api/users/role/STUDENT"],
-    enabled: open,
+    enabled: open && user?.role !== UserRole.STUDENT,
   });
 
-  // Get existing enrollments for this exam
-  const { data: enrollments = [], isLoading: loadingEnrollments } = useQuery<any[]>({
-    queryKey: ["/api/exams", examId, "enrollments"],
-    enabled: open,
-  });
-  
-  // Check if this exam has a quantity limit
-  const { 
-    data: purchaseInfo,
-    isLoading: loadingPurchaseInfo 
-  } = useQuery<ExamPurchaseInfo>({
-    queryKey: ["/api/exam-purchases/can-assign", examId],
+  // Check if academy can assign students to this exam (has available licenses)
+  const { data: assignability, isLoading: isCheckingAssignability } = useQuery({
+    queryKey: ["/api/exam-purchases/can-assign", exam?.id],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/exam-purchases/can-assign?examId=${examId}`);
+      if (!exam?.id) return { canAssign: false };
+      const res = await apiRequest("GET", `/api/exam-purchases/can-assign?examId=${exam.id}`);
       return res.json();
     },
-    enabled: open,
+    enabled: open && exam?.purchased && user?.role === UserRole.ACADEMY,
   });
 
-  // Filter out already enrolled students
-  const availableStudents = students.filter(student => {
-    return !enrollments.some(enrollment => 
-      enrollment.studentId === student.id
-    );
+  // Enroll student mutation
+  const enrollMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      // If exam is purchased, increment used quantity
+      if (exam?.purchased && assignability?.purchase?.id) {
+        await apiRequest("POST", "/api/exam-purchases/increment-used", { 
+          purchaseId: assignability.purchase.id 
+        });
+      }
+
+      // Create enrollment
+      const res = await apiRequest("POST", "/api/enrollments", {
+        examId: exam.id,
+        studentId: parseInt(studentId),
+        isAssigned: true,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Student Assigned",
+        description: "The student has been assigned to this exam.",
+      });
+
+      // Reset selections
+      setSelectedStudent("");
+      setSelectedStudents([]);
+      
+      // Call the callback if provided
+      if (onAssigned) {
+        onAssigned();
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Assignment Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
-  // Filtered students based on search query
-  const filteredStudents = availableStudents.filter(student =>
-    student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    student.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    student.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Bulk enrollment mutation
+  const bulkEnrollMutation = useMutation({
+    mutationFn: async (studentIds: string[]) => {
+      const results = [];
+      for (const studentId of studentIds) {
+        try {
+          // If exam is purchased, increment used quantity
+          if (exam?.purchased && assignability?.purchase?.id) {
+            await apiRequest("POST", "/api/exam-purchases/increment-used", { 
+              purchaseId: assignability.purchase.id 
+            });
+          }
 
-  // Function to toggle student selection
-  const toggleStudentSelection = (studentId: number) => {
-    // Don't allow selecting more students than remaining quantity if there's a limit
-    if (
-      purchaseInfo && 
-      !purchaseInfo.canAssign && 
-      !selectedStudents.includes(studentId)
-    ) {
+          // Create enrollment
+          const res = await apiRequest("POST", "/api/enrollments", {
+            examId: exam.id,
+            studentId: parseInt(studentId),
+            isAssigned: true,
+          });
+          
+          const result = await res.json();
+          results.push(result);
+        } catch (error) {
+          console.error(`Failed to enroll student ${studentId}:`, error);
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
       toast({
-        title: "Insufficient exam quantity",
-        description: "You've reached the maximum number of students you can assign to this exam.",
+        title: "Students Assigned",
+        description: `Successfully assigned ${results.length} students to this exam.`,
+      });
+
+      // Reset selections
+      setSelectedStudents([]);
+      
+      // Call the callback if provided
+      if (onAssigned) {
+        onAssigned();
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Bulk Assignment Failed",
+        description: error.message,
         variant: "destructive",
       });
-      return;
-    }
-    
-    if (
-      purchaseInfo && 
-      purchaseInfo.canAssign && 
-      !selectedStudents.includes(studentId) && 
-      selectedStudents.length >= purchaseInfo.remainingQuantity
-    ) {
-      toast({
-        title: "Quantity limit reached",
-        description: `You can only assign ${purchaseInfo.remainingQuantity} more student(s) to this exam.`,
-        variant: "destructive",
-      });
-      return;
-    }
+    },
+  });
 
+  // Handle student assignment
+  const handleAssign = () => {
+    if (isAssigningMultiple) {
+      if (selectedStudents.length === 0) {
+        toast({
+          title: "No Students Selected",
+          description: "Please select at least one student to assign.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      bulkEnrollMutation.mutate(selectedStudents);
+    } else {
+      if (!selectedStudent) {
+        toast({
+          title: "No Student Selected",
+          description: "Please select a student to assign.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      enrollMutation.mutate(selectedStudent);
+    }
+  };
+
+  // Toggle a student in the selected students array
+  const toggleStudentSelection = (studentId: string) => {
     if (selectedStudents.includes(studentId)) {
       setSelectedStudents(selectedStudents.filter(id => id !== studentId));
     } else {
@@ -134,281 +192,155 @@ export default function AssignStudentsDialog({
     }
   };
 
-  // Clear selections when dialog is closed
+  // Determine if we can assign more students (based on available licenses)
+  const canAssignMore = !exam?.purchased || 
+    !assignability?.canAssign || 
+    (assignability?.remainingQuantity && assignability.remainingQuantity > 0);
+
+  // Calculate how many more students can be assigned
+  const remainingAssignments = exam?.purchased ? 
+    (assignability?.remainingQuantity || 0) : 
+    Infinity;
+
+  // Reset selections when dialog opens/closes
   useEffect(() => {
     if (!open) {
+      setSelectedStudent("");
       setSelectedStudents([]);
-      setSearchQuery("");
+      setIsAssigningMultiple(false);
     }
   }, [open]);
-  
-  // Mutation to increment used quantity after successful assignment
-  const incrementUsedQuantityMutation = useMutation({
-    mutationFn: async (purchaseId: number) => {
-      const response = await apiRequest("POST", "/api/exam-purchases/increment-used", {
-        purchaseId,
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/exam-purchases/can-assign", examId] });
-    },
-    onError: (error) => {
-      console.error("Failed to increment used quantity:", error);
-    },
-  });
-
-  // Mutation to assign students
-  const assignStudentsMutation = useMutation({
-    mutationFn: async (studentId: number) => {
-      const response = await apiRequest("POST", "/api/enrollments", {
-        examId,
-        studentId,
-        isAssigned: true,
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/exams", examId, "enrollments"] });
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: `Failed to assign student: ${error.message}`,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Handle assignment of selected students
-  const handleAssignStudents = async () => {
-    if (selectedStudents.length === 0) {
-      toast({
-        title: "No students selected",
-        description: "Please select at least one student to assign",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // If there's a purchase with quantity limit, make sure there's enough quantity
-    if (purchaseInfo && purchaseInfo.purchase) {
-      const { purchase, remainingQuantity } = purchaseInfo;
-      
-      if (selectedStudents.length > remainingQuantity) {
-        toast({
-          title: "Insufficient quantity",
-          description: `You can only assign ${remainingQuantity} more student(s) to this exam.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
-    try {
-      // Use Promise.all to assign all students in parallel
-      await Promise.all(
-        selectedStudents.map(studentId => assignStudentsMutation.mutateAsync(studentId))
-      );
-      
-      // If exam is purchased, increment the used quantity for each assigned student
-      if (purchaseInfo?.purchase?.id) {
-        for (let i = 0; i < selectedStudents.length; i++) {
-          await incrementUsedQuantityMutation.mutateAsync(purchaseInfo.purchase.id);
-        }
-      }
-
-      toast({
-        title: "Students assigned",
-        description: `Successfully assigned ${selectedStudents.length} student(s) to the exam`,
-      });
-
-      setOpen(false);
-    } catch (error) {
-      // Error handling is done in the mutation
-    }
-  };
 
   return (
-    <Dialog 
-      open={open} 
-      onOpenChange={(newOpen) => {
-        setOpen(newOpen);
-        if (!newOpen) {
-          setSelectedStudents([]);
-          setSearchQuery("");
-        }
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="ml-auto">
-          <UserPlus className="mr-2 h-4 w-4" />
-          Assign Students
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[800px]" onInteractOutside={(e) => e.preventDefault()}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Assign Students to Exam</DialogTitle>
           <DialogDescription>
-            Select students to assign to the exam: <strong>{examTitle}</strong>
+            Assign students to <strong>{exam?.title}</strong>
+            {exam?.purchased && assignability?.remainingQuantity !== undefined && (
+              <span className="block mt-1 text-sm">
+                {assignability.remainingQuantity} license(s) remaining
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="assign" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="assign">Assign New Students</TabsTrigger>
-            <TabsTrigger value="enrolled">Currently Enrolled</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="assign" className="mt-4">
-            {/* Show quantity information if available */}
-            {!loadingPurchaseInfo && purchaseInfo && (
-              <Alert className="mb-4" variant={purchaseInfo.canAssign ? "default" : "destructive"}>
-                <AlertCircle className="h-4 w-4 mr-2" />
-                <AlertTitle>Exam Assignment Quota</AlertTitle>
+        {isLoadingStudents || isCheckingAssignability ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-2">Loading...</span>
+          </div>
+        ) : (
+          <>
+            {exam?.purchased && assignability?.remainingQuantity === 0 && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>No licenses remaining</AlertTitle>
                 <AlertDescription>
-                  {purchaseInfo.canAssign 
-                    ? `You can assign ${purchaseInfo.remainingQuantity} more student(s) to this exam.` 
-                    : "You have reached the maximum number of students for this exam."}
+                  You have used all available licenses for this exam. Purchase more licenses to continue assigning students.
                 </AlertDescription>
               </Alert>
             )}
-            
-            <div className="flex items-center mb-4">
-              <Search className="mr-2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search students by name, username or email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1"
-              />
-            </div>
 
-            {loadingStudents ? (
-              <div className="flex justify-center items-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : availableStudents.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>All students are already enrolled in this exam.</p>
-              </div>
-            ) : filteredStudents.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No students found matching your search.</p>
+            {students?.length === 0 ? (
+              <div className="text-center py-6">
+                <p>No students available to assign.</p>
               </div>
             ) : (
-              <ScrollArea className="h-[350px] rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[50px]">Select</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Username</TableHead>
-                      <TableHead>Email</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredStudents.map((student) => (
-                      <TableRow key={student.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedStudents.includes(student.id)}
-                            onCheckedChange={() => toggleStudentSelection(student.id)}
+              <div className="space-y-4">
+                {isAssigningMultiple ? (
+                  <div className="space-y-4">
+                    <Label>Select Students</Label>
+                    <div className="border rounded-md p-3 max-h-60 overflow-y-auto space-y-2">
+                      {students.map((student: any) => (
+                        <div key={student.id} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id={`student-${student.id}`}
+                            checked={selectedStudents.includes(student.id.toString())}
+                            onChange={() => toggleStudentSelection(student.id.toString())}
+                            disabled={enrollMutation.isPending || bulkEnrollMutation.isPending || !canAssignMore}
+                            className="h-4 w-4 rounded border-gray-300"
                           />
-                        </TableCell>
-                        <TableCell>{student.name}</TableCell>
-                        <TableCell>{student.username}</TableCell>
-                        <TableCell>{student.email}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-            )}
-
-            <div className="mt-4 flex justify-between items-center">
-              <div className="text-sm text-muted-foreground">
-                {selectedStudents.length} student(s) selected
-              </div>
-              <Button 
-                onClick={handleAssignStudents} 
-                disabled={selectedStudents.length === 0 || assignStudentsMutation.isPending}
-              >
-                {assignStudentsMutation.isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          <label htmlFor={`student-${student.id}`}>
+                            {student.name} ({student.email})
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Selected {selectedStudents.length} student(s) 
+                      {exam?.purchased && ` of ${assignability?.remainingQuantity} remaining licenses`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="studentId">Select Student</Label>
+                    <Select
+                      value={selectedStudent}
+                      onValueChange={setSelectedStudent}
+                      disabled={enrollMutation.isPending || !canAssignMore}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a student" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectLabel>Students</SelectLabel>
+                          {students.map((student: any) => (
+                            <SelectItem key={student.id} value={student.id.toString()}>
+                              {student.name} ({student.email})
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
-                Assign Selected Students
-              </Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="enrolled" className="mt-4">
-            {loadingEnrollments ? (
-              <div className="flex justify-center items-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : enrollments.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No students are currently enrolled in this exam.</p>
-              </div>
-            ) : (
-              <ScrollArea className="h-[350px] rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Username</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Assignment</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {enrollments.map((enrollment) => (
-                      <TableRow key={enrollment.id}>
-                        <TableCell>{enrollment.student?.name}</TableCell>
-                        <TableCell>{enrollment.student?.username}</TableCell>
-                        <TableCell>{enrollment.student?.email}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            enrollment.status === "PASSED" 
-                              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100" 
-                              : enrollment.status === "FAILED"
-                              ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
-                              : enrollment.status === "COMPLETED"
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
-                              : enrollment.status === "STARTED"
-                              ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
-                              : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
-                          }`}>
-                            {enrollment.status}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {enrollment.isAssigned ? (
-                            <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-2 py-1 rounded-full">
-                              Assigned
-                            </span>
-                          ) : (
-                            <span className="text-xs bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100 px-2 py-1 rounded-full">
-                              Self-enrolled
-                            </span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
             )}
-          </TabsContent>
-        </Tabs>
+          </>
+        )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            <XCircle className="mr-2 h-4 w-4" />
-            Close
-          </Button>
+        <DialogFooter className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+          <div className="flex-1 flex justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAssigningMultiple(!isAssigningMultiple)}
+              disabled={enrollMutation.isPending || bulkEnrollMutation.isPending}
+            >
+              {isAssigningMultiple ? "Single Assignment" : "Bulk Assignment"}
+            </Button>
+          </div>
+          <div className="flex space-x-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAssign}
+              disabled={
+                enrollMutation.isPending || 
+                bulkEnrollMutation.isPending || 
+                (isAssigningMultiple ? selectedStudents.length === 0 : !selectedStudent) || 
+                !canAssignMore
+              }
+            >
+              {enrollMutation.isPending || bulkEnrollMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Assigning...
+                </>
+              ) : (
+                "Assign"
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

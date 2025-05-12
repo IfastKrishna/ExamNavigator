@@ -2,12 +2,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { UserRole, insertAcademySchema, insertUserSchema } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useCreateAcademyWithCredentialsMutation } from "@/lib/api/academies";
 import MainLayout from "@/components/layouts/main-layout";
 import {
   Form,
@@ -82,75 +81,26 @@ export default function CreateAcademyPage() {
     },
   });
 
-  // Create academy and admin user mutation
-  const createAcademyMutation = useMutation({
-    mutationFn: async (data: CreateAcademyForm) => {
-      try {
-        // First, create the admin user for the academy
-        const adminData = {
-          name: data.name, // Use academy name as the admin name
-          email: data.academyEmail,
-          username: data.academyUsername,
-          password: data.academyPassword,
-          role: UserRole.ACADEMY,
-        };
-        
-        const userRes = await apiRequest("POST", "/api/register", adminData);
-        if (!userRes.ok) {
-          const errorData = await userRes.json();
-          throw new Error(errorData.message || "Failed to create academy user");
-        }
-        
-        const userData = await userRes.json();
-        
-        // Then create the academy with the new user ID
-        const academyData = {
-          name: data.name,
-          description: data.description,
-          status: data.status,
-          userId: userData.id, // Link the academy to the admin
-        };
-        
-        // Include authorization headers for this request
-        const academyRes = await fetch("/api/academies", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(academyData),
-          credentials: "include" // This is critical for sending cookies!
-        });
-        
-        if (!academyRes.ok) {
-          const errorData = await academyRes.json();
-          throw new Error(errorData.message || "Failed to create academy");
-        }
-        
-        return await academyRes.json();
-      } catch (error: any) {
-        console.error("Academy creation error:", error);
-        throw error;
-      }
-    },
-    onSuccess: () => {
-      toast({
-        title: "Academy Created",
-        description: "The academy has been created successfully with login credentials.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/academies"] });
-      setLocation("/academies");
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to create academy",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  // Use the organized API mutation for creating academy with credentials
+  const createAcademyMutation = useCreateAcademyWithCredentialsMutation();
 
   const onSubmit = (data: CreateAcademyForm) => {
-    createAcademyMutation.mutate(data);
+    createAcademyMutation.mutate(data, {
+      onSuccess: () => {
+        toast({
+          title: "Academy Created",
+          description: "The academy has been created successfully with login credentials.",
+        });
+        setLocation("/academies");
+      },
+      onError: (error: Error) => {
+        toast({
+          title: "Failed to create academy",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    });
   };
 
   // Handle tab changes

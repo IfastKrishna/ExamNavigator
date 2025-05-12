@@ -2,7 +2,7 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { Express } from "express";
 import session from "express-session";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { scrypt, randomBytes, timingSafeEqual, checkPrimeSync } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser, UserRole } from "@shared/schema";
@@ -30,16 +30,18 @@ async function comparePasswords(supplied: string, stored: string) {
 
 export function setupAuth(app: Express) {
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || 'examportal-secret-key',
+    secret: process.env.SESSION_SECRET || "examportal-secret-key",
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
+      maxAge: 1000 * 60 * 60 * 24 * 2, // 2 days
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
-    }
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+    },
+    // Force the session identifier cookie to be set on every response
+    rolling: true,
   };
 
   app.set("trust proxy", 1);
@@ -59,7 +61,7 @@ export function setupAuth(app: Express) {
       } catch (error) {
         return done(error);
       }
-    }),
+    })
   );
 
   passport.serializeUser((user, done) => done(null, user.id));
@@ -75,12 +77,12 @@ export function setupAuth(app: Express) {
   app.post("/api/register", async (req, res, next) => {
     try {
       const { username, password, email, name, role } = req.body;
-      
+
       // Basic validation
       if (!username || !password || !email || !name) {
         return res.status(400).json({ message: "All fields are required" });
       }
-      
+
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
@@ -88,12 +90,12 @@ export function setupAuth(app: Express) {
 
       // Determine role - default to STUDENT if not specified
       let userRole = role || UserRole.STUDENT;
-      
+
       // Allow SUPER_ADMIN role to be explicitly set (for user registration)
       if (role === UserRole.SUPER_ADMIN) {
         userRole = UserRole.SUPER_ADMIN;
       }
-      
+
       // Allow ACADEMY role either when:
       // 1. A super admin is creating the account, or
       // 2. The role is explicitly requested as ACADEMY
@@ -107,35 +109,40 @@ export function setupAuth(app: Express) {
         password: hashedPassword,
         email,
         name,
-        role: userRole
+        role: userRole,
       });
 
-      // If creating an academy, also create an academy record
-      if (userRole === UserRole.ACADEMY) {
-        await storage.createAcademy({
-          userId: user.id,
-          name: name,
-          description: "",
-          logo: "",
-          status: "ACTIVE"
-        });
-      }
+      // // If creating an academy, also create an academy record
+      // if (userRole === UserRole.ACADEMY) {
+      //   await storage.createAcademy({
+      //     userId: user.id,
+      //     name: name,
+      //     description: "",
+      //     logoUrl: "",
+      //     status: "ACTIVE",
+      //   });
+      // }
 
       // Remove password from response
       const { password: _, ...safeUser } = user;
 
-      req.login(user, (err) => {
-        if (err) return next(err);
-        res.status(201).json(safeUser);
-      });
+      res.status(201).json(safeUser);
+
+      // req.login(user, (err) => {
+      //   if (err) return next(err);
+      //   res.status(201).json(safeUser);
+      // });
     } catch (error) {
-      next(error);
+      // next(error);
+      res.status(500).json({ message: "Internal Server Error" });
     }
   });
 
   app.post("/api/login", passport.authenticate("local"), (req, res) => {
     // Remove password from response
+    console.log("User logged in:", req.user);
     const { password: _, ...safeUser } = req.user as SelectUser;
+    console.log("User logged in:", safeUser);
     res.status(200).json(safeUser);
   });
 
@@ -148,7 +155,7 @@ export function setupAuth(app: Express) {
 
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     // Remove password from response
     const { password: _, ...safeUser } = req.user as SelectUser;
     res.json(safeUser);

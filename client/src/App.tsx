@@ -28,6 +28,9 @@ import Settings from "@/pages/settings";
 // Payment Pages
 import PaymentSuccessPage from "@/pages/payment/success";
 import PaymentCancelPage from "@/pages/payment/cancel";
+import AcademyView from "./pages/academies/view";
+import EditExam from "./pages/exams/[id]/edit";
+import ExamView from "./components/exams/exam-view";
 
 function Router() {
   return (
@@ -35,8 +38,11 @@ function Router() {
       <ProtectedRoute path="/" component={Dashboard} />
       <ProtectedRoute path="/academies" component={Academies} />
       <ProtectedRoute path="/academies/create" component={CreateAcademy} />
+      <ProtectedRoute path="/academies/:academyId" component={AcademyView} />
       <ProtectedRoute path="/exams" component={Exams} />
       <ProtectedRoute path="/exams/create" component={CreateExam} />
+      <ProtectedRoute path="/exams/:examId" component={ExamView} />
+      <ProtectedRoute path="/exams/:examId/edit" component={EditExam} />
       <ProtectedRoute path="/exams/:examId/take" component={TakeExam} />
       <ProtectedRoute path="/exams/:examId/results" component={ExamResults} />
       <ProtectedRoute path="/exams/purchases" component={ExamPurchases} />

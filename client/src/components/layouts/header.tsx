@@ -51,7 +51,7 @@ export default function Header({ sidebarOpen, setSidebarOpen, user }: HeaderProp
             </Button>
             
             <Link href="/" className="flex items-center">
-              <span className="text-primary dark:text-accent font-bold text-xl">ExamPortal</span>
+              <span className="text-primary font-bold text-xl">ExamPortal</span>
             </Link>
           </div>
           

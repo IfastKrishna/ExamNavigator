@@ -63,8 +63,8 @@ export default function MobileNavigation({ userRole }: MobileNavigationProps) {
     .slice(0, 4);
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg z-20 transition-colors duration-200">
-      <div className="grid grid-cols-5 h-16">
+   <nav className="flex items-center md:hidden h-16 fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg z-20 transition-colors duration-200">
+      <div className="w-full grid grid-cols-5">
         {filteredNavItems.map((item) => (
           <Link key={item.name} href={item.href}>
             <a className={cn(

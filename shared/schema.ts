@@ -1,4 +1,12 @@
-import { pgTable, text, serial, integer, boolean, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  serial,
+  integer,
+  boolean,
+  timestamp,
+  doublePrecision,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -6,7 +14,7 @@ import { z } from "zod";
 export enum UserRole {
   SUPER_ADMIN = "SUPER_ADMIN",
   ACADEMY = "ACADEMY",
-  STUDENT = "STUDENT"
+  STUDENT = "STUDENT",
 }
 
 // Users table
@@ -17,7 +25,7 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default(UserRole.STUDENT),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Academies table
@@ -31,13 +39,13 @@ export const academies = pgTable("academies", {
   location: text("location"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
+  status: text("status").notNull().default("ACTIVE"), // ACTIVE, INACTIVE
 });
 
 // Exams table
 export const exams = pgTable("exams", {
   id: serial("id").primaryKey(),
-  academyId: integer("academyId").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   duration: integer("duration").notNull(), // in minutes
@@ -48,7 +56,7 @@ export const exams = pgTable("exams", {
   examTime: text("examTime"), // scheduled time for the exam (e.g., "14:00")
   certificateTemplateId: integer("certificateTemplateId"), // reference to certificate template
   manualReview: boolean("manualReview").notNull().default(false), // whether exam needs manual review
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Questions table
@@ -58,7 +66,7 @@ export const questions = pgTable("questions", {
   text: text("text").notNull(),
   type: text("type").notNull().default("MULTIPLE_CHOICE"), // MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER
   points: integer("points").notNull().default(1),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Options table (for multiple choice questions)
@@ -67,7 +75,7 @@ export const options = pgTable("options", {
   questionId: integer("questionId").notNull(),
   text: text("text").notNull(),
   isCorrect: boolean("isCorrect").notNull().default(false),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Student-Exam enrollments
@@ -81,7 +89,7 @@ export const enrollments = pgTable("enrollments", {
   score: doublePrecision("score"),
   certificateId: text("certificateId"),
   isAssigned: boolean("isAssigned").default(false), // Flag for students assigned by academies
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Attempted answers by students
@@ -92,7 +100,7 @@ export const attempts = pgTable("attempts", {
   selectedOptionId: integer("selectedOptionId"),
   textAnswer: text("textAnswer"),
   isCorrect: boolean("isCorrect"),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Certificate Templates
@@ -102,7 +110,7 @@ export const certificateTemplates = pgTable("certificate_templates", {
   description: text("description"),
   template: text("template").notNull(), // HTML/CSS template for certificate
   isDefault: boolean("isDefault").notNull().default(false),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Certificates
@@ -114,7 +122,7 @@ export const certificates = pgTable("certificates", {
   expiresAt: timestamp("expiresAt"),
   academyId: integer("academyId").notNull(),
   studentId: integer("studentId").notNull(),
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Academy Exam Purchases
@@ -128,7 +136,7 @@ export const examPurchases = pgTable("exam_purchases", {
   status: text("status").notNull().default("ACTIVE"), // ACTIVE, EXPIRED, CANCELED
   paymentId: text("paymentId"), // Reference to payment/transaction ID
   expiryDate: timestamp("expiryDate"), // Optional expiry date
-  createdAt: timestamp("createdAt").defaultNow()
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Insert schemas
@@ -137,7 +145,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   email: true,
   name: true,
-  role: true
+  role: true,
 });
 
 export const insertAcademySchema = createInsertSchema(academies).pick({
@@ -148,27 +156,28 @@ export const insertAcademySchema = createInsertSchema(academies).pick({
   website: true,
   location: true,
   contactEmail: true,
-  contactPhone: true
+  contactPhone: true,
+  status: true,
 });
 
 export const insertQuestionSchema = createInsertSchema(questions).pick({
   examId: true,
   text: true,
   type: true,
-  points: true
+  points: true,
 });
 
 export const insertOptionSchema = createInsertSchema(options).pick({
   questionId: true,
   text: true,
-  isCorrect: true
+  isCorrect: true,
 });
 
 export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({
   studentId: true,
   examId: true,
   status: true,
-  isAssigned: true
+  isAssigned: true,
 });
 
 export const insertAttemptSchema = createInsertSchema(attempts).pick({
@@ -176,14 +185,16 @@ export const insertAttemptSchema = createInsertSchema(attempts).pick({
   questionId: true,
   selectedOptionId: true,
   textAnswer: true,
-  isCorrect: true
+  isCorrect: true,
 });
 
-export const insertCertificateTemplateSchema = createInsertSchema(certificateTemplates).pick({
+export const insertCertificateTemplateSchema = createInsertSchema(
+  certificateTemplates
+).pick({
   name: true,
   description: true,
   template: true,
-  isDefault: true
+  isDefault: true,
 });
 
 export const insertCertificateSchema = createInsertSchema(certificates).pick({
@@ -191,12 +202,11 @@ export const insertCertificateSchema = createInsertSchema(certificates).pick({
   studentId: true,
   academyId: true,
   templateId: true,
-  expiresAt: true
+  expiresAt: true,
 });
 
 // Update exam schema to include the new fields
 export const insertExamSchema = createInsertSchema(exams).pick({
-  academyId: true,
   title: true,
   description: true,
   duration: true,
@@ -206,7 +216,7 @@ export const insertExamSchema = createInsertSchema(exams).pick({
   examDate: true,
   examTime: true,
   certificateTemplateId: true,
-  manualReview: true
+  manualReview: true,
 });
 
 // Exam purchase schema
@@ -218,7 +228,22 @@ export const insertExamPurchaseSchema = createInsertSchema(examPurchases).pick({
   totalPrice: true,
   status: true,
   expiryDate: true,
-  paymentId: true
+  paymentId: true,
+});
+
+// Extended schema for question with options - used in frontend for forms
+export const questionWithOptionsSchema = insertQuestionSchema.extend({
+  text: z.string().min(5, "Question text must be at least 5 characters"),
+  type: z.enum(["MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"]),
+  points: z.coerce.number().min(1, "Points must be at least 1"),
+  options: z
+    .array(
+      z.object({
+        text: z.string().min(1, "Option text is required"),
+        isCorrect: z.boolean().default(false),
+      })
+    )
+    .optional(),
 });
 
 // Types
@@ -244,7 +269,9 @@ export type Attempt = typeof attempts.$inferSelect;
 export type InsertAttempt = z.infer<typeof insertAttemptSchema>;
 
 export type CertificateTemplate = typeof certificateTemplates.$inferSelect;
-export type InsertCertificateTemplate = z.infer<typeof insertCertificateTemplateSchema>;
+export type InsertCertificateTemplate = z.infer<
+  typeof insertCertificateTemplateSchema
+>;
 
 export type Certificate = typeof certificates.$inferSelect;
 export type InsertCertificate = z.infer<typeof insertCertificateSchema>;

@@ -1,12 +1,13 @@
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
-import * as schema from '@shared/schema';
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
+import * as schema from "@shared/schema";
 
 // Get the database URL from environment variables
-const dbUrl = process.env.DATABASE_URL || '';
+const dbUrl = process.env.DATABASE_URL || "";
+// console.log("Database URL:", dbUrl);
 
 if (!dbUrl) {
-  console.error('DATABASE_URL environment variable is not set');
+  console.error("DATABASE_URL environment variable is not set");
   process.exit(1);
 }
 
@@ -16,11 +17,11 @@ export const db = drizzle(sql, { schema });
 
 // Function to initialize the database
 export async function initializeDatabase() {
-  console.log('Initializing database...');
-  
+  console.log("Initializing database...");
+
   try {
     // Check if tables exist, create them if they don't
-    
+
     // Create users table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS users (
@@ -33,7 +34,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create academies table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS academies (
@@ -49,7 +50,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create exams table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS exams (
@@ -68,7 +69,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create questions table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS questions (
@@ -80,7 +81,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create options table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS options (
@@ -91,7 +92,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create enrollments table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS enrollments (
@@ -107,7 +108,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create attempts table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS attempts (
@@ -120,7 +121,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create certificate_templates table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS certificate_templates (
@@ -132,7 +133,7 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create certificates table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS certificates (
@@ -146,26 +147,26 @@ export async function initializeDatabase() {
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
+
     // Create exam_purchases table if it doesn't exist
     await sql`
       CREATE TABLE IF NOT EXISTS exam_purchases (
         id SERIAL PRIMARY KEY,
         "academyId" INTEGER NOT NULL REFERENCES academies(id),
         "examId" INTEGER NOT NULL REFERENCES exams(id),
-        quantity INTEGER,
-        "usedQuantity" INTEGER DEFAULT 0,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        "usedQuantity" INTEGER NOT NULL DEFAULT 0,
         "totalPrice" DECIMAL(10, 2) NOT NULL,
-        status VARCHAR(20),
+        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
         "paymentId" VARCHAR(255),
         "expiryDate" TIMESTAMP,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-    
-    console.log('Database initialized successfully');
+
+    console.log("Database initialized successfully");
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error("Error initializing database:", error);
     throw error;
   }
 }

@@ -1,6 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { UserRole, type User } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { UserRole } from "@shared/schema";
+import { useStudentsQuery } from "@/lib/api/students";
+import { useAcademiesQuery } from "@/lib/api/academies";
 import MainLayout from "@/components/layouts/main-layout";
 import {
   Table,
@@ -11,66 +15,57 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, GraduationCap, User as UserIcon } from "lucide-react";
-import { useState } from "react";
-import { getInitials } from "@/lib/utils";
+import { Loader2, Search, Plus, Eye, MoreHorizontal } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { formatDate } from "@/lib/utils";
 
 export default function StudentsPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("all");
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Get academy ID if current user is an academy
+  const academyId = user?.role === UserRole.ACADEMY ? user.academyId : undefined;
+  
+  // Fetch students using our organized API query
+  const { data: students = [], isLoading: isLoadingStudents } = useStudentsQuery(academyId);
+  
+  // Fetch academies for super admin view
+  const { data: academies = [], isLoading: isLoadingAcademies } = useAcademiesQuery();
+  
+  // Filter students based on search query
+  const filteredStudents = students.filter(student => 
+    student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.username.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  // Fetch all students
-  const { data: students = [], isLoading } = useQuery<User[]>({
-    queryKey: ["/api/users", { role: UserRole.STUDENT }],
-    queryFn: async () => {
-      // In a real app, this would be an API call that filters by role
-      return [
-        { id: 1, username: "student1", name: "John Doe", email: "john@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-        { id: 2, username: "student2", name: "Jane Smith", email: "jane@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-        { id: 3, username: "student3", name: "Michael Johnson", email: "michael@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-        { id: 4, username: "student4", name: "Emily Davis", email: "emily@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-        { id: 5, username: "student5", name: "Robert Wilson", email: "robert@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-      ];
-    },
-    enabled: user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.ACADEMY
-  });
+  // Calculate loading state
+  const isLoading = isLoadingStudents || (user?.role === UserRole.SUPER_ADMIN && isLoadingAcademies);
 
-  // Fetch enrollments for the academy
-  const { data: enrollments = [] } = useQuery({
-    queryKey: ["/api/enrollments"],
-    enabled: user?.role === UserRole.ACADEMY
-  });
-
-  const filteredStudents = students.filter(student => {
-    const matchesSearch = 
-      student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.username.toLowerCase().includes(searchQuery.toLowerCase());
-      
-    if (!matchesSearch) return false;
-    
-    if (user?.role === UserRole.ACADEMY) {
-      if (activeTab === "enrolled") {
-        return enrollments.some(e => e.studentId === student.id);
-      } else if (activeTab === "active") {
-        return enrollments.some(e => e.studentId === student.id && e.status === "STARTED");
-      } else if (activeTab === "completed") {
-        return enrollments.some(e => e.studentId === student.id && (e.status === "PASSED" || e.status === "FAILED"));
-      }
+  // Add academy names to students for super admin view
+  const studentsWithAcademyNames = filteredStudents.map(student => {
+    if (user?.role === UserRole.SUPER_ADMIN && student.academyId) {
+      const academy = academies.find(a => a.id === student.academyId);
+      return {
+        ...student,
+        academyName: academy?.name || "Unknown Academy"
+      };
     }
-    
-    return true;
+    return student;
   });
 
   if (isLoading) {
     return (
-      <MainLayout title="Students" subtitle="Manage and view all students">
+      <MainLayout title="Students" subtitle="View and manage students">
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="ml-2 text-lg">Loading students...</span>
@@ -80,42 +75,43 @@ export default function StudentsPage() {
   }
 
   return (
-    <MainLayout title="Students" subtitle="Manage and view all students">
+    <MainLayout title="Students" subtitle="View and manage students">
       <Card className="transition-colors duration-200">
         <CardHeader className="pb-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <CardTitle className="text-xl font-bold">Students</CardTitle>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500 dark:text-gray-400" />
-              <Input
-                placeholder="Search students..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500 dark:text-gray-400" />
+                <Input
+                  placeholder="Search students..."
+                  className="pl-8 w-full sm:w-64"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              {(user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.ACADEMY) && (
+                <Button onClick={() => setLocation("/students/create")}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Student
+                </Button>
+              )}
             </div>
           </div>
-          
-          {user?.role === UserRole.ACADEMY && (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-              <TabsList>
-                <TabsTrigger value="all">All Students</TabsTrigger>
-                <TabsTrigger value="enrolled">Enrolled</TabsTrigger>
-                <TabsTrigger value="active">Active</TabsTrigger>
-                <TabsTrigger value="completed">Completed</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
         </CardHeader>
         <CardContent>
           {filteredStudents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center">
-              <GraduationCap className="h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" />
+              <div className="rounded-full bg-gray-100 dark:bg-gray-800 p-3 mb-3">
+                <Search className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+              </div>
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">No Students Found</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-md">
                 {searchQuery 
                   ? "No students match your search criteria. Try a different search term."
-                  : "There are currently no students in this category."}
+                  : user?.role === UserRole.ACADEMY
+                  ? "You haven't added any students yet."
+                  : "There are no students in the system yet."}
               </p>
             </div>
           ) : (
@@ -126,59 +122,48 @@ export default function StudentsPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Username</TableHead>
                     <TableHead>Email</TableHead>
-                    {user?.role === UserRole.ACADEMY && (
-                      <>
-                        <TableHead>Exams Enrolled</TableHead>
-                        <TableHead>Exams Completed</TableHead>
-                        <TableHead>Status</TableHead>
-                      </>
-                    )}
+                    {user?.role === UserRole.SUPER_ADMIN && <TableHead>Academy</TableHead>}
+                    <TableHead>Registration Date</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStudents.map((student) => {
-                    // These would be calculated from real data in a full implementation
-                    const examsEnrolled = 3;
-                    const examsCompleted = 2;
-                    const status = examsEnrolled > 0 ? "Active" : "Inactive";
-                    
-                    return (
-                      <TableRow key={student.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <TableCell>
-                          <div className="flex items-center">
-                            <Avatar className="h-8 w-8">
-                              <AvatarFallback className="bg-primary text-white">
-                                {getInitials(student.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="ml-2 font-medium">{student.name}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{student.username}</TableCell>
-                        <TableCell>{student.email}</TableCell>
-                        {user?.role === UserRole.ACADEMY && (
-                          <>
-                            <TableCell>{examsEnrolled}</TableCell>
-                            <TableCell>{examsCompleted}</TableCell>
-                            <TableCell>
-                              <Badge 
-                                variant={status === "Active" ? "success" : "secondary"}
-                              >
-                                {status}
-                              </Badge>
-                            </TableCell>
-                          </>
-                        )}
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <UserIcon className="h-4 w-4 mr-1" />
-                            View Profile
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {studentsWithAcademyNames.map((student) => (
+                    <TableRow key={student.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <TableCell>
+                        <div className="font-medium">{student.name}</div>
+                      </TableCell>
+                      <TableCell>{student.username}</TableCell>
+                      <TableCell>{student.email}</TableCell>
+                      {user?.role === UserRole.SUPER_ADMIN && (
+                        <TableCell>{student.academyName || "Not assigned"}</TableCell>
+                      )}
+                      <TableCell>{formatDate(student.createdAt)}</TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setLocation(`/students/${student.id}`)}>
+                              <Eye className="h-4 w-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setLocation(`/students/${student.id}/edit`)}>
+                              Edit
+                            </DropdownMenuItem>
+                            {user?.role === UserRole.SUPER_ADMIN && !student.academyId && (
+                              <DropdownMenuItem onClick={() => setLocation(`/students/${student.id}/assign`)}>
+                                Assign to Academy
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { UserRole, type Certificate, type User, type Exam, type Academy } from "@shared/schema";
 import MainLayout from "@/components/layouts/main-layout";
+import { useCertificatesQuery } from "@/lib/api/certificates";
+import { useUsersByRoleQuery } from "@/lib/api/users";
+import { useExamsQuery } from "@/lib/api/exams";
+import { useAcademiesQuery } from "@/lib/api/academies";
 import {
   Table,
   TableBody,
@@ -23,33 +26,17 @@ export default function CertificatesPage() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Fetch certificates
-  const { data: certificates = [], isLoading: isLoadingCertificates } = useQuery<Certificate[]>({
-    queryKey: ["/api/certificates"],
-  });
+  // Fetch certificates using our organized API query
+  const { data: certificates = [], isLoading: isLoadingCertificates } = useCertificatesQuery();
 
-  // Fetch users (students)
-  const { data: users = [], isLoading: isLoadingUsers } = useQuery<User[]>({
-    queryKey: ["/api/users", { role: UserRole.STUDENT }],
-    queryFn: async () => {
-      // In a real app, this would be an API call that filters by role
-      return [
-        { id: 1, username: "student1", name: "John Doe", email: "john@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-        { id: 2, username: "student2", name: "Jane Smith", email: "jane@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-        { id: 3, username: "student3", name: "Michael Johnson", email: "michael@example.com", role: UserRole.STUDENT, createdAt: new Date().toISOString() },
-      ];
-    },
-  });
+  // Fetch users (students) using our organized API query
+  const { data: users = [], isLoading: isLoadingUsers } = useUsersByRoleQuery(UserRole.STUDENT);
 
-  // Fetch exams
-  const { data: exams = [], isLoading: isLoadingExams } = useQuery<Exam[]>({
-    queryKey: ["/api/exams"],
-  });
+  // Fetch exams using our organized API query
+  const { data: exams = [], isLoading: isLoadingExams } = useExamsQuery();
 
-  // Fetch academies
-  const { data: academies = [], isLoading: isLoadingAcademies } = useQuery<Academy[]>({
-    queryKey: ["/api/academies"],
-  });
+  // Fetch academies using our organized API query
+  const { data: academies = [], isLoading: isLoadingAcademies } = useAcademiesQuery();
 
   // Process certificates with related data
   const processedCertificates = certificates.map(certificate => {

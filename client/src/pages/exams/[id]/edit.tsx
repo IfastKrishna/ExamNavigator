@@ -1,47 +1,52 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { UserRole, Exam, Academy } from "@shared/schema";
+import { UserRole, Exam, Academy, Question, Option } from "@shared/schema";
 import MainLayout from "@/components/layouts/main-layout";
 import ExamForm from "@/components/exams/exam-form";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { Button } from "@/components/ui/button";
 
 export default function EditExamPage() {
-  const { id } = useParams<{ id: string }>();
+  const { examId } = useParams<{ examId: string }>();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const examId = parseInt(id);
+  const parseExamId = parseInt(examId);
 
   // Validate ID
-  if (isNaN(examId)) {
+  if (isNaN(parseExamId)) {
     setLocation("/exams");
     return null;
   }
 
   // Fetch the exam details
-  const { data: exam, isLoading: isLoadingExam } = useQuery<Exam>({
-    queryKey: ["/api/exams", examId],
-  });
-
-  // Fetch academy details
-  const { data: academy, isLoading: isLoadingAcademy } = useQuery<Academy>({
-    queryKey: ["/api/academies", exam?.academyId],
-    enabled: !!exam,
-  });
-
-  // Redirect if not authorized
-  useEffect(() => {
-    if (exam && academy && user) {
-      const isAcademyOwner = user.role === UserRole.ACADEMY && academy.userId === user.id;
-      if (!isAcademyOwner) {
-        setLocation(`/exams/${examId}`);
+  const { data: exam, isLoading: isLoadingExam } = useQuery<Exam & { questions?: (Question & { options: Option[] })[] }>({
+    queryKey: ["/api/exams", parseExamId],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/exams/${parseExamId}`);
+      if (!response.ok) {
+        throw new Error("Exam not found");
       }
-    }
-  }, [exam, academy, user, examId, setLocation]);
+      return response.json();
+    },
+  });
 
-  if (isLoadingExam || isLoadingAcademy) {
+  // Fetch exam questions
+  const { data: questions = [], isLoading: isLoadingQuestions } = useQuery<(Question & { options: Option[] })[]>({
+    queryKey: ["/api/exams", parseExamId, "questions"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/exams/${parseExamId}/questions`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch questions");
+      }
+      return response.json();
+    },
+    enabled: !!exam
+  });
+
+  if (isLoadingExam || isLoadingQuestions) {
     return (
       <MainLayout title="Edit Exam" subtitle="Loading exam information...">
         <div className="flex justify-center items-center h-64">
@@ -53,7 +58,7 @@ export default function EditExamPage() {
   }
 
   // Check permissions
-  if (!exam || !academy || user?.role !== UserRole.ACADEMY || academy.userId !== user.id) {
+  if (!exam) {
     return (
       <MainLayout title="Access Denied" subtitle="You don't have permission to edit this exam">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
@@ -62,7 +67,7 @@ export default function EditExamPage() {
             You don't have permission to edit this exam.
           </p>
           <button 
-            onClick={() => setLocation(`/exams/${examId}`)} 
+            onClick={() => setLocation(`/exams/${parseExamId}`)} 
             className="text-primary dark:text-accent hover:underline"
           >
             ← Back to Exam Details
@@ -77,10 +82,19 @@ export default function EditExamPage() {
       title={`Edit: ${exam.title}`} 
       subtitle="Update exam details and questions"
     >
+      <div className="mb-6">
+        <Button
+          variant="outline" 
+          onClick={() => setLocation("/exams")}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Exams
+        </Button>
+      </div>
       <Card>
         <CardContent className="pt-6">
           <ExamForm 
-            examId={examId} 
+            examId={parseExamId} 
             defaultValues={{
               title: exam.title,
               description: exam.description ?? "",
@@ -88,8 +102,10 @@ export default function EditExamPage() {
               passingScore: exam.passingScore,
               price: exam.price,
               status: exam.status as "DRAFT" | "PUBLISHED",
-              academyId: exam.academyId
-            }} 
+              examDate: exam.examDate,
+              examTime: exam.examTime,
+            }}
+            initialQuestions={questions} 
           />
         </CardContent>
       </Card>
